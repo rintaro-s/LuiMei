@@ -1,8 +1,3 @@
-/**
- * LumiMei OS v1 API Routes
- * 新API仕様に対応したルート定義
- */
-
 const express = require('express');
 const router = express.Router();
 
@@ -12,13 +7,50 @@ const assistantExt = require('../controllers/assistant-extended-controller');
 const contextController = require('../controllers/context-controller');
 const memoryController = require('../controllers/memory-controller');
 const visionController = require('../controllers/vision-controller');
+const visionApiController = require('../controllers/vision-api-controller');
 const deviceController = require('../controllers/device-controller');
 const userController = require('../controllers/user-controller');
 const statusController = require('../controllers/status-controller');
+const communicationController = require('../controllers/communication-controller');
 const { requireAuth } = require('../controllers/auth-controller');
 
-// Apply authentication middleware to all v1 routes
+// Public monitoring endpoints (no auth)
+router.get('/status', (req, res, next) => {
+  // Expose basic status without requiring authentication for monitoring
+  req.user = { userId: 'system' };
+  next();
+}, statusController.getStatus);
+
+// Health check for v1 API (public)
+router.get('/health', (req, res) => {
+  res.status(200).json({
+    success: true,
+    version: '1.0.0',
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    apis: [
+      'assistant',
+      'context', 
+      'memory',
+      'devices',
+      'vision'
+    ]
+  });
+});
+
+// Apply authentication middleware to remaining v1 routes
 router.use(requireAuth);
+
+// CLIENT COMPATIBLE ENDPOINTS
+
+// Communication API - main message endpoint
+router.post('/communication/message', communicationController.sendMessage);
+
+// Vision API - image analysis
+router.post('/vision/analyze', visionApiController.analyzeImage);
+
+// Device list endpoint
+router.get('/devices/list', deviceController.listDevices);
 
 // 1) Assistant API - 対話＋TTS統合応答
 router.post('/assistant/reply', assistantController.reply);

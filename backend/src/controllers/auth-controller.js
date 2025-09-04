@@ -2,6 +2,43 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
+const fs = require('fs');
+const path = require('path');
+
+const LOG_PATH = process.env.ACCESS_LOG_PATH || path.join(__dirname, '..', '..', 'logs', 'access.log');
+
+function ensureLogDir() {
+  try {
+    const dir = path.dirname(LOG_PATH);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  } catch (e) {
+    // ignore
+  }
+}
+
+function maskToken(auth) {
+  if (!auth) return null;
+  try {
+    if (auth.startsWith('Bearer ')) {
+      const t = auth.slice(7).trim();
+      if (t.length <= 12) return 'Bearer ' + t;
+      return 'Bearer ' + t.slice(0, 8) + '...' + t.slice(-8);
+    }
+    if (auth.length <= 12) return auth;
+    return auth.slice(0, 8) + '...' + auth.slice(-8);
+  } catch (e) { return auth; }
+}
+
+function logAuthFailure(entry) {
+  try {
+    ensureLogDir();
+    const line = JSON.stringify(Object.assign({ ts: new Date().toISOString() }, entry));
+    fs.appendFileSync(LOG_PATH, line + '\n');
+  } catch (e) {
+    console.log('[auth-logger] write error', e.message);
+  }
+}
+
 // Generate tokens
 const generateTokens = (userId) => {
   const accessToken = jwt.sign(
@@ -19,19 +56,22 @@ const generateTokens = (userId) => {
   return { accessToken, refreshToken };
 };
 
-// Register new user - TEST COMPATIBLE VERSION
+// Register new user - CLIENT COMPATIBLE VERSION
 const register = async (req, res) => {
   try {
     console.log('Registration request received:', JSON.stringify(req.body, null, 2));
 
-    const { email, password, displayName, personality, preferences, deviceInfo } = req.body;
+    const { identifier, email, password, displayName, personality, preferences, deviceInfo } = req.body;
+    const registerEmail = identifier || email;
 
     // Validate required fields
-    if (!email || !password || !displayName) {
+    if (!registerEmail || !password || !displayName) {
       return res.status(400).json({
         success: false,
         error: 'Missing required fields',
-        message: 'Email, password, and displayName are required'
+        details: [
+          { field: 'identifier', message: 'identifier (email), password, and displayName are required' }
+        ]
       });
     }
 
@@ -42,7 +82,7 @@ const register = async (req, res) => {
     const userData = {
       _id: userId,
       userId: userId,
-      email: email.toLowerCase(),
+      email: registerEmail.toLowerCase(),
       displayName,
       personality: personality || {
         mode: 'friendly',
@@ -67,12 +107,12 @@ const register = async (req, res) => {
     if (process.env.NODE_ENV !== 'test') {
       try {
         // Check if user exists
-        const existingUser = await User.findOne({ email: email.toLowerCase() });
+        const existingUser = await User.findOne({ email: registerEmail.toLowerCase() });
         if (existingUser) {
           return res.status(409).json({
             success: false,
             error: 'User already exists',
-            message: 'A user with this email address already exists'
+            details: [{ field: 'identifier', message: 'A user with this email address already exists' }]
           });
         }
 
@@ -85,11 +125,16 @@ const register = async (req, res) => {
       }
     }
 
-    // Return successful registration
+    // Return successful registration - CLIENT COMPATIBLE FORMAT
     const responseData = {
+      success: true,
+      accessToken: tokens.accessToken,
+      expiresAt: new Date(Date.now() + 3600000).toISOString(),
       user: {
+        id: savedUser.userId || savedUser._id,
         userId: savedUser.userId || savedUser._id,
         email: savedUser.email,
+        name: savedUser.displayName,
         displayName: savedUser.displayName,
         personality: savedUser.personality,
         preferences: savedUser.preferences,
@@ -97,39 +142,40 @@ const register = async (req, res) => {
         isEmailVerified: savedUser.isEmailVerified || false,
         createdAt: savedUser.createdAt
       },
-      tokens
+      metadata: {
+        timestamp: new Date().toISOString()
+      }
     };
 
     console.log('Registration successful for user:', savedUser.email);
 
-    res.status(201).json({
-      success: true,
-      message: 'User registered successfully',
-      data: responseData
-    });
+    res.status(201).json(responseData);
 
   } catch (error) {
     console.error('Registration error:', error);
     res.status(500).json({
       success: false,
       error: 'Registration failed',
-      message: 'An error occurred during registration'
+      details: [{ field: 'server', message: 'An error occurred during registration' }]
     });
   }
 };
 
-// Login user - TEST COMPATIBLE VERSION
+// Login user - CLIENT COMPATIBLE VERSION
 const login = async (req, res) => {
   try {
-    console.log('Login request received for:', req.body.email);
+    console.log('Login request received for:', req.body.identifier || req.body.email);
 
-    const { email, password, deviceInfo } = req.body;
+    const { identifier, email, password, deviceInfo } = req.body;
+    const loginIdentifier = identifier || email;
 
-    if (!email || !password) {
+    if (!loginIdentifier || !password) {
       return res.status(400).json({
         success: false,
         error: 'Missing credentials',
-        message: 'Email and password are required'
+        details: [
+          { field: 'identifier', message: 'identifier (email or username) and password are required' }
+        ]
       });
     }
 
@@ -138,7 +184,7 @@ const login = async (req, res) => {
     // Try database lookup if not in test mode
     if (process.env.NODE_ENV !== 'test') {
       try {
-        user = await User.findOne({ email: email.toLowerCase() });
+        user = await User.findOne({ email: loginIdentifier.toLowerCase() });
       } catch (dbError) {
         console.log('Database lookup failed, using mock authentication');
       }
@@ -151,7 +197,7 @@ const login = async (req, res) => {
       user = {
         _id: userId,
         userId: userId,
-        email: email.toLowerCase(),
+        email: loginIdentifier.toLowerCase(),
         displayName: 'Test User',
         personality: {
           mode: 'friendly',
@@ -173,8 +219,7 @@ const login = async (req, res) => {
       if (!isPasswordValid) {
         return res.status(401).json({
           success: false,
-          error: 'Invalid credentials',
-          message: 'Incorrect email or password'
+          error: 'Invalid credentials'
         });
       }
     }
@@ -182,11 +227,16 @@ const login = async (req, res) => {
     // Generate tokens
     const tokens = generateTokens(user.userId || user._id);
 
-    // Prepare response data
+    // Prepare response data - CLIENT COMPATIBLE FORMAT
     const responseData = {
+      success: true,
+      accessToken: tokens.accessToken,
+      expiresAt: new Date(Date.now() + 3600000).toISOString(), // 1 hour
       user: {
+        id: user.userId || user._id,
         userId: user.userId || user._id,
         email: user.email,
+        name: user.displayName,
         displayName: user.displayName,
         personality: user.personality,
         preferences: user.preferences,
@@ -194,23 +244,21 @@ const login = async (req, res) => {
         isEmailVerified: user.isEmailVerified,
         lastLoginAt: new Date()
       },
-      tokens
+      metadata: {
+        timestamp: new Date().toISOString()
+      }
     };
 
     console.log('Login successful for user:', user.email);
 
-    res.status(200).json({
-      success: true,
-      message: 'Login successful',
-      data: responseData
-    });
+    res.status(200).json(responseData);
 
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({
       success: false,
       error: 'Login failed',
-      message: 'An error occurred during login'
+      details: [{ field: 'server', message: 'An error occurred during login' }]
     });
   }
 };
@@ -331,8 +379,9 @@ const refreshToken = async (req, res) => {
 const requireAuth = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
-
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      const entry = { remote: req.ip || req.connection?.remoteAddress || '-', method: req.method, path: req.originalUrl || req.url, reason: 'MISSING_OR_MALFORMED_HEADER', authorization: maskToken(authHeader) };
+      logAuthFailure(entry);
       return res.status(401).json({
         success: false,
         error: 'Authentication required',
@@ -343,12 +392,31 @@ const requireAuth = async (req, res, next) => {
     const token = authHeader.substring(7);
 
     // Verify token
-    const decoded = jwt.verify(
-      token,
-      process.env.JWT_SECRET || 'your-secret-key'
-    );
+    let decoded;
+    try {
+      decoded = jwt.verify(
+        token,
+        process.env.JWT_SECRET || 'your-secret-key'
+      );
+    } catch (vErr) {
+      // Determine reason
+      let reason = 'INVALID_TOKEN';
+      if (vErr.name === 'TokenExpiredError') reason = 'EXPIRED';
+      else if (vErr.name === 'JsonWebTokenError') reason = 'MALFORMED_OR_INVALID_SIGNATURE';
+
+      const entry = { remote: req.ip || req.connection?.remoteAddress || '-', method: req.method, path: req.originalUrl || req.url, reason, authorization: maskToken(authHeader) };
+      logAuthFailure(entry);
+
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid token',
+        message: 'Please provide a valid access token'
+      });
+    }
 
     if (decoded.tokenType !== 'access') {
+      const entry = { remote: req.ip || req.connection?.remoteAddress || '-', method: req.method, path: req.originalUrl || req.url, reason: 'INVALID_TOKEN_TYPE', tokenType: decoded.tokenType, authorization: maskToken(authHeader) };
+      logAuthFailure(entry);
       return res.status(401).json({
         success: false,
         error: 'Invalid token type'

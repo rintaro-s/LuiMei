@@ -31,63 +31,58 @@ function generateMessageId() {
   return 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
 }
 
-// Send message endpoint - SIMPLIFIED VERSION
+// Send message endpoint - CLIENT COMPATIBLE VERSION
 const sendMessage = async (req, res) => {
   try {
     console.log('Message request received:', JSON.stringify(req.body, null, 2));
     
-    const { userId, message, messageType, context, options } = req.body;
+    const { userId, messageType = 'text', message, context = {}, options = {} } = req.body;
 
     // Validate required fields
-    if (!message) {
+    if (!userId || !message) {
       return res.status(400).json({
         success: false,
-        error: 'Message is required'
+        error: 'Validation failed',
+        details: [
+          { field: 'userId', message: 'userId is required' },
+          { field: 'message', message: 'message is required' }
+        ]
       });
     }
 
-    // Generate message ID
+    // Generate message ID and session ID
     const messageId = generateMessageId();
+    const sessionId = options.sessionId || 'session_' + Date.now();
 
-    // Generate mock AI response
-    const mockResponse = generateMockResponse(message, context);
+    // Generate response content
+    const responseContent = generateMockResponse(message, context);
 
-    // Prepare response
+    // Prepare CLIENT COMPATIBLE response
     const responseData = {
+      success: true,
       messageId,
+      sessionId,
       response: {
-        content: mockResponse,
-        messageType: 'text',
-        emotion: {
-          dominant: 'friendly',
-          confidence: 0.85
-        }
-      },
-      context: {
-        sessionId: 'session_' + Date.now(),
-        mood: context?.mood || 'neutral',
-        ...context
+        content: responseContent,
+        type: 'text'
       },
       metadata: {
-        processingTime: Math.random() * 100 + 50,
         timestamp: new Date().toISOString(),
-        model: 'lumimei-mock-v1'
+        messageType,
+        userId,
+        processingTime: Math.floor(Math.random() * 200) + 50
       }
     };
 
-    console.log('Message processed successfully');
-
-    res.status(200).json({
-      success: true,
-      ...responseData
-    });
+    console.log('Message processed successfully for user:', userId);
+    res.status(200).json(responseData);
 
   } catch (error) {
-    console.error('Communication error:', error);
+    console.error('Message processing error:', error);
     res.status(500).json({
       success: false,
       error: 'Message processing failed',
-      message: error.message
+      details: [{ field: 'server', message: 'An error occurred while processing the message' }]
     });
   }
 };

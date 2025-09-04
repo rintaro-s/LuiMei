@@ -19,12 +19,72 @@ const io = new Server(server, {
   }
 });
 
+// Socket.IO authentication middleware
+const fs = require('fs');
+const path = require('path');
+const LOG_PATH = process.env.ACCESS_LOG_PATH || path.join(__dirname, '..', '..', 'logs', 'access.log');
+
+function ensureLogDir() {
+  try {
+    const dir = path.dirname(LOG_PATH);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  } catch (e) { /* ignore */ }
+}
+
+function maskToken(auth) {
+  if (!auth) return null;
+  try {
+    if (auth.startsWith && auth.startsWith('Bearer ')) {
+      const t = auth.slice(7).trim();
+      if (t.length <= 12) return 'Bearer ' + t;
+      return 'Bearer ' + t.slice(0, 8) + '...' + t.slice(-8);
+    }
+    if (auth.length <= 12) return auth;
+    return auth.slice(0, 8) + '...' + auth.slice(-8);
+  } catch (e) { return auth; }
+}
+
+function writeAuthLog(entry) {
+  try {
+    ensureLogDir();
+    fs.appendFileSync(LOG_PATH, JSON.stringify(Object.assign({ ts: new Date().toISOString() }, entry)) + '\n');
+  } catch (e) { console.log('[socket-auth-logger] write error', e.message); }
+}
+
+io.use((socket, next) => {
+  try {
+    const auth = socket.handshake?.auth || {};
+    const headers = socket.handshake?.headers || {};
+    const query = socket.handshake?.query || {};
+    // priority: auth.accessToken -> headers.authorization -> query.token
+    let token = auth.accessToken || auth.token || headers.authorization || query.token || '';
+    // if header contains 'Bearer ', keep it as-is so maskToken handles it
+    if (headers.authorization && !token.startsWith('Bearer ')) token = headers.authorization;
+
+    if (!token || token === '') {
+      const entry = { remote: socket.handshake.address || socket.conn?.remoteAddress || '-', method: 'SOCKET_CONNECT', path: socket.nsp && socket.nsp.name ? socket.nsp.name : '/', reason: token === '' ? 'EMPTY' : 'MISSING', authorization: maskToken(token) };
+      writeAuthLog(entry);
+      return next(new Error('Authentication required'));
+    }
+
+    // attach masked token info to socket for downstream use if needed
+    socket.authToken = token;
+    return next();
+  } catch (err) {
+    console.error('Socket auth middleware error', err);
+    return next(new Error('Authentication required'));
+  }
+});
+
 // Middleware
 app.use(helmet());
 app.use(cors({
   origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'],
   credentials: true
 }));
+// Access logger
+const accessLogger = require('./middleware/access-logger');
+app.use(accessLogger());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 

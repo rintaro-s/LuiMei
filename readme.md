@@ -1,5 +1,46 @@
 
-# LumiMei OS（LMO）
+# LumiMei OS
+
+## 起動方法
+
+### 1. MongoDB起動（Docker）
+```powershell
+docker run -d --name mongodb -p 27017:27017 -e MONGO_INITDB_ROOT_USERNAME=admin -e MONGO_INITDB_ROOT_PASSWORD=password mongo:latest
+```
+
+### 2. サーバー起動
+```powershell
+npm install
+npm start
+```
+
+サーバーは `http://localhost:3000` で起動します。
+
+## クライアント互換API
+
+### 認証レスポンス形式
+```json
+{
+  "success": true,
+  "accessToken": "<jwt_token>",
+  "expiresAt": "<ISO8601>",
+  "user": {
+    "id": "user_001",
+    "name": "...",
+    "email": "..."
+  },
+  "metadata": {
+    "timestamp": "..."
+  }
+}
+```
+
+### 主要エンドポイント
+- `POST /api/auth/login` - identifier/password でログイン
+- `POST /api/v1/communication/message` - メッセージ送信
+- `POST /api/v1/vision/analyze` - 画像解析
+- `GET /api/v1/devices/list` - デバイス一覧
+- `GET /api/v1/status` - システム状態（LMO）
 
 あなたの生活をまるごと最適化する「パーソナルAIインフラ」。
 スマートフォン、PC、スマート家電、各種オンラインサービスをシームレスに連携し、
