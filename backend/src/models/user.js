@@ -49,6 +49,13 @@ const deviceSchema = new mongoose.Schema({
 
 // Main user schema
 const userSchema = new mongoose.Schema({
+  // Google OAuth fields
+  googleId: {
+    type: String,
+    unique: true,
+    sparse: true,
+    index: true
+  },
   userId: {
     type: String,
     required: true,
@@ -63,9 +70,9 @@ const userSchema = new mongoose.Schema({
     trim: true,
     index: true
   },
+  // Optional password for legacy accounts
   password: {
     type: String,
-    required: true,
     minlength: 6
   },
   displayName: {
@@ -73,6 +80,18 @@ const userSchema = new mongoose.Schema({
     required: true,
     trim: true,
     maxlength: 100
+  },
+  firstName: String,
+  lastName: String,
+  profilePicture: String,
+  
+  // OAuth tokens
+  accessToken: String,
+  refreshToken: String,
+  provider: {
+    type: String,
+    enum: ['google', 'local'],
+    default: 'google'
   },
   
   // Personality and preferences
@@ -229,8 +248,8 @@ userSchema.pre('save', async function(next) {
       this.userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     }
 
-    // Hash password if modified
-    if (this.isModified('password')) {
+    // Hash password if modified and exists (for legacy accounts)
+    if (this.password && this.isModified('password')) {
       const salt = await bcrypt.genSalt(12);
       this.password = await bcrypt.hash(this.password, salt);
     }
@@ -254,7 +273,64 @@ userSchema.pre('save', async function(next) {
 
 // Instance methods
 userSchema.methods.comparePassword = async function(candidatePassword) {
-  return bcrypt.compare(candidatePassword, this.password);
+  if (!this.password) return false; // OAuth users don't have passwords
+  return await bcrypt.compare(candidatePassword, this.password);
+};
+
+userSchema.methods.updateAccessToken = function(accessToken, refreshToken = null) {
+  this.accessToken = accessToken;
+  if (refreshToken) this.refreshToken = refreshToken;
+  this.lastLoginAt = new Date();
+  return this.save();
+};
+
+userSchema.methods.hasPermission = function(permission) {
+  return this.permissions.granted.includes(permission);
+};
+
+userSchema.methods.grantPermission = function(permission) {
+  if (!this.permissions.granted.includes(permission)) {
+    this.permissions.granted.push(permission);
+    this.permissions.grantedAt[permission] = new Date();
+  }
+};
+
+userSchema.methods.revokePermission = function(permission) {
+  this.permissions.granted = this.permissions.granted.filter(p => p !== permission);
+  delete this.permissions.grantedAt[permission];
+};
+
+userSchema.methods.addFriend = async function(friendUserId) {
+  if (!this.friends.list.includes(friendUserId)) {
+    this.friends.list.push(friendUserId);
+    this.friends.addedAt[friendUserId] = new Date();
+    this.markModified('friends');
+    await this.save();
+  }
+};
+
+userSchema.methods.removeFriend = async function(friendUserId) {
+  this.friends.list = this.friends.list.filter(id => id !== friendUserId);
+  delete this.friends.addedAt[friendUserId];
+  this.markModified('friends');
+  await this.save();
+};
+
+userSchema.methods.isGoogleUser = function() {
+  return this.provider === 'google' && this.googleId;
+};
+
+userSchema.methods.getPublicProfile = function() {
+  return {
+    userId: this.userId,
+    firstName: this.firstName,
+    lastName: this.lastName,
+    profilePicture: this.profilePicture,
+    personality: this.personality,
+    createdAt: this.createdAt,
+    isOnline: this.status.isOnline,
+    lastActiveAt: this.status.lastActiveAt
+  };
 };
 
 userSchema.methods.incrementUsage = function(type, amount = 1) {

@@ -3,6 +3,8 @@
  * readme_app.md仕様に対応した通信API
  */
 
+const { google } = require('googleapis');
+
 // Helper function to generate mock responses
 function generateMockResponse(message, context = {}) {
   const responses = [
@@ -31,14 +33,92 @@ function generateMessageId() {
   return 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
 }
 
-// Send message endpoint - CLIENT COMPATIBLE VERSION
+// call LLM server (expects plain text response containing first-line tags)
+async function callLLM(message, context = {}, options = {}) {
+  // Default to client.py local server if no LLM_API_URL specified
+  const defaultClientUrl = 'http://127.0.0.1:8000/chat';
+  const apiUrl = process.env.LLM_API_URL || defaultClientUrl;
+
+  // Construct system prompt
+  const systemPrompt = process.env.LLM_SYSTEM_PROMPT || (
+    `You are LumiMei assistant. Respond in Japanese when user input is Japanese. ` +
+    `Always begin your entire response with a single line that starts with 'LLM-TAGS:' followed by semicolon-separated key=value pairs when relevant. ` +
+    `Do NOT return JSON. After the LLM-TAGS line, include a human-readable explanation in natural language. ` +
+    `Tags can include: calendar_api=true/false, calendar_action=list_events/create_event, date=YYYY-MM-DD, device_command=..., etc.`
+  );
+
+  // If calling the legacy client.py endpoint (default), use its expected payload shape
+  const isClientPy = apiUrl.includes('127.0.0.1:8000') || apiUrl.includes('localhost');
+
+  const clientPayload = {
+    user_id: options.userId || context.userId || 'default_user',
+    text: message,
+    role_sheet: options.role_sheet || context.role_sheet || null,
+    over_hallucination: options.over_hallucination || false,
+    history: options.history || context.history || [],
+    compressed_memory: options.compressed_memory || context.compressed_memory || null
+  };
+
+  const payload = isClientPy ? clientPayload : {
+    system: systemPrompt,
+    input: message,
+    context: context,
+    options: options
+  };
+
+  const headers = { 'Content-Type': 'application/json' };
+  if (process.env.LLM_API_KEY) headers['Authorization'] = `Bearer ${process.env.LLM_API_KEY}`;
+
+  // Use global fetch (Node 18+)
+  const resp = await fetch(apiUrl, { method: 'POST', headers, body: JSON.stringify(payload) });
+  if (!resp.ok) {
+    const txt = await resp.text().catch(() => '');
+    throw new Error(`LLM server error: ${resp.status} ${resp.statusText} - ${txt}`);
+  }
+
+  const contentType = resp.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    const j = await resp.json();
+    // If replying to client.py, try to extract the 'response' field
+    if (isClientPy) {
+      const respField = j.response || j.get?.('response') || j["response"];
+      if (typeof respField === 'string') return respField;
+      if (respField && typeof respField === 'object') {
+        // common shape: { content: 'text', ... }
+        return respField.content || JSON.stringify(respField);
+      }
+    }
+    // Generic extraction
+    return j.text || j.output || j.result || JSON.stringify(j);
+  }
+
+  // Plain text fallback
+  const text = await resp.text();
+  return text;
+}
+
+function parseLlmTags(text) {
+  const lines = (text || '').split('\n');
+  const first = lines[0] || '';
+  const result = { tags: {}, body: lines.slice(1).join('\n') };
+  if (first.startsWith('LLM-TAGS:')) {
+    const payload = first.replace('LLM-TAGS:', '').trim();
+    if (payload.length === 0) return result;
+    const parts = payload.split(';').map(p => p.trim()).filter(Boolean);
+    parts.forEach(p => {
+      const [k, v] = p.split('=').map(s => s.trim());
+      if (k) result.tags[k] = v === undefined ? true : v;
+    });
+  }
+  return result;
+}
+
+// Send message endpoint - CLIENT COMPATIBLE VERSION (LLM tag protocol)
 const sendMessage = async (req, res) => {
   try {
     console.log('Message request received:', JSON.stringify(req.body, null, 2));
-    
     const { userId, messageType = 'text', message, context = {}, options = {} } = req.body;
 
-    // Validate required fields
     if (!userId || !message) {
       return res.status(400).json({
         success: false,
@@ -50,31 +130,95 @@ const sendMessage = async (req, res) => {
       });
     }
 
-    // Generate message ID and session ID
+    // Resolve user (req.user may be present from auth middleware)
+    let user = req.user;
+    if (!user) {
+      try {
+        const User = require('../models/User');
+        user = await User.findOne({ userId: userId });
+      } catch (e) { user = null; }
+    }
+
     const messageId = generateMessageId();
     const sessionId = options.sessionId || 'session_' + Date.now();
 
-    // Generate response content
-    const responseContent = generateMockResponse(message, context);
+    // Call LLM (mock or real integration)
+    const llmRaw = await callLLM(message, context, options);
+    const parsed = parseLlmTags(llmRaw);
 
-    // Prepare CLIENT COMPATIBLE response
+    // Default response body from LLM
+    let assistantText = parsed.body || '';
+    let extra = {};
+
+    // If LLM asked for calendar access, perform calendar API call server-side
+    if (parsed.tags['calendar_api'] && parsed.tags['calendar_api'].toString() === 'true') {
+      // require google access
+      if (!user || !user.isGoogleUser || !user.isGoogleUser()) {
+        assistantText += '\n\n(カレンダー連携が必要です。Googleアカウントを連携してください。)';
+      } else if (!user.hasPermission || !user.hasPermission('calendar.read')) {
+        assistantText += '\n\n(カレンダー閲覧の許可がありません。権限を付与してください。)';
+      } else {
+        try {
+          const oauth2Client = new google.auth.OAuth2(
+            process.env.GCP_OAUTH2_CLIENT_ID,
+            process.env.GCP_OAUTH2_CLIENT_SECRET,
+            process.env.GCP_OAUTH2_REDIRECT_URI
+          );
+          oauth2Client.setCredentials({
+            access_token: user.accessToken,
+            refresh_token: user.refreshToken
+          });
+
+          const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+          const date = parsed.tags['date'] || new Date().toISOString().split('T')[0];
+          const timeMin = new Date(date + 'T00:00:00').toISOString();
+          const timeMax = new Date(date + 'T23:59:59').toISOString();
+          const calRes = await calendar.events.list({
+            calendarId: 'primary',
+            timeMin,
+            timeMax,
+            singleEvents: true,
+            orderBy: 'startTime'
+          });
+
+          const items = calRes.data.items || [];
+          extra.calendar = { date, total: items.length, events: items.map(ev => ({
+            id: ev.id,
+            summary: ev.summary,
+            start: ev.start,
+            end: ev.end,
+            attendees: ev.attendees || []
+          })) };
+
+          assistantText += `\n\n(取得した予定: ${items.length} 件)`;
+        } catch (e) {
+          console.error('Calendar fetch error:', e.message);
+          assistantText += '\n\n(カレンダーの取得に失敗しました)';
+        }
+      }
+    }
+
+    // Prepare response
     const responseData = {
       success: true,
       messageId,
       sessionId,
       response: {
-        content: responseContent,
-        type: 'text'
+        content: assistantText,
+        type: 'text',
+        llm_raw: llmRaw // for debugging; may remove in production
       },
       metadata: {
         timestamp: new Date().toISOString(),
         messageType,
         userId,
-        processingTime: Math.floor(Math.random() * 200) + 50
+        processingTime: Math.floor(Math.random() * 200) + 50,
+        parsedTags: parsed.tags,
+        ...extra
       }
     };
 
-    console.log('Message processed successfully for user:', userId);
+    console.log('Message processed successfully for user:', userId, 'tags=', parsed.tags);
     res.status(200).json(responseData);
 
   } catch (error) {
@@ -82,7 +226,7 @@ const sendMessage = async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Message processing failed',
-      details: [{ field: 'server', message: 'An error occurred while processing the message' }]
+      details: [{ field: 'server', message: error.message }]
     });
   }
 };

@@ -1,144 +1,123 @@
 
 # LumiMei OS
 
-## 起動方法
+# LumiMei OS — README
 
-### 1. MongoDB起動（Docker）
-```powershell
-docker run -d --name mongodb -p 27017:27017 -e MONGO_INITDB_ROOT_USERNAME=admin -e MONGO_INITDB_ROOT_PASSWORD=password mongo:latest
+このリポジトリは LumiMei OS（LMO）のバックエンド API サーバーです。
+以下は、ローカルで開発/テストするための手順、Google OAuth 2.0 を用いた認証フロー、主要な API と Android クライアント向けの連携方法です。
+
+## 1. 目的
+- Android アプリが Google OAuth 2.0 を使って安全にログインできること
+- サーバーから発行される JWT を使って REST / Socket.IO へ接続できること
+
+## 2. 必要な環境（開発用）
+- Node.js (推奨: 16+)
+- npm
+- Docker（MongoDB をローカルで立てる場合）
+
+## 3. 環境変数
+ルートの `backend/.env` に必要な環境変数を設定してください（例を編集して使用）。必須項目:
+
+MUST:
+
+```
+MONGODB_URI=mongodb://admin:password@localhost:27017/meimi
+PORT=3001
+JWT_SECRET=change_this_to_a_strong_secret
+JWT_EXPIRES_IN=24h
+
+# Google OAuth
+GCP_OAUTH2_CLIENT_ID=<あなたのGoogleクライアントID>
+GCP_OAUTH2_CLIENT_SECRET=<あなたのGoogleクライアントシークレット>
+GCP_OAUTH2_REDIRECT_URI=http://localhost:3001/auth/google/callback,meimi://auth/callback
+
+# モバイルアプリ受け取り用（OAuth後にリダイレクトされるスキーム）
+MOBILE_APP_CALLBACK_URL=meimi://auth/callback
 ```
 
-### 2. サーバー起動
+注意: `GCP_OAUTH2_REDIRECT_URI` にはサーバーのコールバックと、モバイルのカスタムスキーム（例: `meimi://auth/callback`）を登録しておいてください。
+
+## 4. ローカル起動手順（開発）
+
+1) MongoDB を Docker で起動（既にローカルMongoがあれば不要）:
+
 ```powershell
+docker run -d --name meimi-mongo -p 27017:27017 -e MONGO_INITDB_ROOT_USERNAME=admin -e MONGO_INITDB_ROOT_PASSWORD=password mongo:latest
+```
+
+2) 依存インストールとサーバー起動
+
+```powershell
+cd backend
 npm install
 npm start
 ```
 
-サーバーは `http://localhost:3000` で起動します。
+デフォルトでサーバーは `http://localhost:3001` を想定しています（`PORT` 環境変数で変更可能）。
 
-## クライアント互換API
+## 5. 認証フロー（サマリ）
 
-### 認証レスポンス形式
-```json
-{
-  "success": true,
-  "accessToken": "<jwt_token>",
-  "expiresAt": "<ISO8601>",
-  "user": {
-    "id": "user_001",
-    "name": "...",
-    "email": "..."
-  },
-  "metadata": {
-    "timestamp": "..."
-  }
-}
+1. クライアント（Android）はブラウザまたはカスタムタブで `https://<SERVER_HOST>/auth/google` にアクセス。
+2. Google の認証画面でユーザーが認可。
+3. サーバーが Google からコールバックを受け取り、ユーザーを作成/更新。サーバー側で JWT を作成。
+4. サーバーはモバイルのリダイレクト先 (`MOBILE_APP_CALLBACK_URL`) に `?token=<JWT>` 付きでリダイレクト。
+5. Android アプリは受け取った JWT を保存し、以降の REST / Socket.IO 接続で使用する。
+
+セキュリティ注意:
+- リダイレクト URL にトークンが含まれるため、アプリ側はインテント受け取りで確実に HTTPS で受け渡すかカスタムスキームのインテントフィルタを厳密に設定してください。
+- HTTPS 本番環境ではリダイレクト先にカスタムスキームだけを使う設計は避け、App Links / Universal Links を使うことを推奨します。
+
+## 6. サーバー側 OAuth エンドポイント
+
+- `GET  /auth/google` — Google 認証開始
+- `GET  /auth/google/callback` — Google からのコールバック。成功時に `MOBILE_APP_CALLBACK_URL?token=<JWT>` にリダイレクト。
+- `POST /auth/logout` — JWT を使ったログアウト（ユーザーのオンライン状態を更新）
+- `GET  /auth/profile` — JWT で保護されたユーザープロファイル取得
+
+※ 既存のメール/パスワードによるログインルートは互換性のため残してありますが、実運用では Google OAuth を使用してください。
+
+## 7. クライアントが JWT を使う方法
+
+REST: すべての保護された API 呼び出しでヘッダに `Authorization: Bearer <JWT>` を付与してください。
+
+Socket.IO: 2つの推奨方法があります（モバイルクライアントでの互換性を優先）:
+
+1) ハンドシェイクの auth オブジェクトに入れる
+
+```js
+const socket = io('https://your-server', {
+  auth: { accessToken: jwt }
+});
 ```
 
-### 主要エンドポイント
-- `POST /api/auth/login` - identifier/password でログイン
-- `POST /api/v1/communication/message` - メッセージ送信
-- `POST /api/v1/vision/analyze` - 画像解析
-- `GET /api/v1/devices/list` - デバイス一覧
-- `GET /api/v1/status` - システム状態（LMO）
+2) クエリパラメータで渡す（フェイルバック）
 
-あなたの生活をまるごと最適化する「パーソナルAIインフラ」。
-スマートフォン、PC、スマート家電、各種オンラインサービスをシームレスに連携し、
-自然な会話だけで日々のタスクやデバイス操作をサポートします。
+```
+const socket = io('https://your-server', { query: { token: jwt } });
+```
 
-> 「OSのように生活全体を管理してくれる“AI〇〇”」
+サーバー側は `handshake.auth.accessToken` → `headers.authorization` → `query.token` の順でトークンを探します。
 
+## 8. 主要 API 概要（抜粋）
 
-※ 本リポジトリはLumiMei OS（LMO）のAPIサーバーです。クライアント（AndroidアプリやWindowsアプリなど）は別途作成します。このサーバーを複数のユーザー、複数のクライアイアントガ使用できます
+- `POST /api/v1/assistant/reply` — テキスト問い合わせ（会話の同期応答）
+- `POST /api/v1/assistant/stream` — 音声ストリーミング（Socket.IO を使用）
+- `POST /api/v1/vision/analyze` — 画像解析
+- `GET  /api/v1/users/:id/profile` — ユーザープロファイル
+- `GET  /api/v1/status` — システム状態
+- `GET  /api/v1/voices` — 利用可能な音声一覧（TTS）
+
+詳細は `backend/src/controllers` 内の各コントローラ実装を参照してください。
+
+## 9. トラブルシューティング
+
+- サーバーが 500 で落ちる場合: `backend/.env` を確認し、`MONGODB_URI` が正しいか、`JWT_SECRET` が設定されているか確認してください。
+- OAuth リダイレクトが失敗する場合: Google Cloud Console の OAuth クライアントに登録したリダイレクト URI がサーバーの `GCP_OAUTH2_REDIRECT_URI` と一致するか確認してください。
+- Socket.IO 接続が拒否される場合: サーバーのログで `Socket Auth` のエラーを確認してください。ハンドシェイクに `auth.accessToken` を入れるか、ヘッダ/クエリにトークンを付与してください。
 
 ---
 
-
-## 技術スタック
-
-- Node.js / Express.js（RESTful API・リアルタイム通信）
-- MongoDB（データベース）
-- Socket.IO（リアルタイムイベント・通知）
-- Python（AIコア拡張・モデル連携予定）
-- 各種AIライブラリ（NLP, 音声, 画像, 感情分析など）
-- OpenAPI（API仕様管理）
-
-※ クライアント（Android/Windows/Web等）はAPI・Socket.IO経由で本サーバーと連携します。
-
-## クライアント-サーバー通信プロトコル
-
-### REST API エンドポイント
-#### 基本メッセージ送信
-```http
-POST /api/v1/communication/message
-
-{
-  "userId": "user_001",
-  "messageType": "text",
-  "context": {
-    "location": "Tokyo",
-  },
-  "options": {
-    "includeActions": true,
-    "personalityMode": "friendly",
-  }
-}
-## v1 API 機能追加 (2025/09/03)
-
-新たに追加されたv1 APIは、LumiMei OSのクライアント（Web/モバイル/デスクトップ/音声UI等）から直接利用可能なREST/Socket.IOエンドポイント群です。主な機能は以下：
-
-- ストリーミング音声出力
-- ユーザーコンテキスト更新・取得
-- メモリ検索・保存
-- 画像/映像解析（OCR/物体認識）
-- 統一エラー処理
-### APIエンドポイント一覧
-
-- `POST /api/v1/assistant/reply`
-  - 入力: { text, context, userId }
-  - 出力: { tts, actions, context }
-#### 2. ストリーミング音声出力
-- `POST /api/v1/assistant/stream` (Socket.IO)
-
-- `POST /api/v1/assistant/wakeword`
-  - 入力: { audio, userId }
-  - 出力: { detected: true/false, timestamp }
-
- POST `/api/auth/login` : ログイン（JWT発行）
- POST `/api/auth/register` : ユーザー登録
-#### 4. ユーザーコンテキスト
-- `POST /api/v1/context/update`
- POST `/api/v1/assistant/session` : セッション開始
-  - Request: `{ userId, locale, model, options }`
-  - Response: `{ sessionId, expiresAt }`
-  - 入力: { userId, context }
-  - 出力: { success, updatedContext }
- イベント: `start` / `stream_start` / `user_text` / `user_audio_chunk` / `end`
- サーバー送信: `partial_text` / `final_text` / `audio_chunk` / `function_call` / `function_result` / `stream_end` / `stream_error`
-- `GET /api/v1/context/:userId`
-  - 出力: { context }
- GET `/api/v1/assistant/tools` : ツール定義取得
-  - Response: `[ { name, description, paramsSchema } ]`
-
-#### 5. メモリ
- GET `/api/v1/tts?voice=meimei&text=こんにちは` : 音声データ取得（audio/pcm or audio/opus）
-- `POST /api/v1/memory/query`
-  - 入力: { query, userId }
- POST `/api/v1/assistant/wakeword/suggest` : 候補生成
-  - Request: `{ locale, seedName }`
-  - Response: `{ suggestions: [...] }`
-  - 出力: { results }
-- `POST /api/v1/memory/store`
- GET `/api/v1/users/{id}/profile` : プロファイル取得
-  - 入力: { data, userId }
-  - 出力: { success, memoryId }
- GET `/api/v1/assistant/history?userId=&limit=50` : 履歴検索
- POST `/api/v1/assistant/history` : 履歴保存
-  - Request: `{ sessionId, transcript, latencyMs }`
-- `GET /api/v1/memory/:memoryId`
-  - 出力: { memory }
- POST `/api/v1/stt/async` : 音声アップロード
- GET `/api/v1/stt/async/{jobId}` : ジョブ結果取得
+詳細な Android 向け 手順は `readme_app.md` を参照してください。
 
 #### 6. デバイス
  GET `/api/v1/status` : モデル状況・稼働時間

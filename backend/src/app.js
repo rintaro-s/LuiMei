@@ -5,24 +5,34 @@ const dotenv = require('dotenv');
 const mongoose = require('mongoose');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
+const passport = require('passport');
 
-// Load environment variables
-dotenv.config();
+// Load environment variables early so other modules (eg. passport) can read them
+const path = require('path');
+// Prefer backend/.env (this app runs from repo root via npm start); fallback to default .env
+const envPath = path.resolve(__dirname, '..', '.env');
+dotenv.config({ path: envPath });
+console.log('Loaded environment from', envPath);
+
+// Load passport configuration
+require('./config/passport');
 
 // Initialize Express app
 const app = express();
 const server = createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'],
-    methods: ['GET', 'POST']
+    origin: ["http://localhost:3000", "http://127.0.0.1:3000", "meimi://auth"],
+    methods: ['GET', 'POST'],
+    allowedHeaders: ["Authorization", "Content-Type"],
+    credentials: true
   }
 });
 
 // Socket.IO authentication middleware
 const fs = require('fs');
-const path = require('path');
-const LOG_PATH = process.env.ACCESS_LOG_PATH || path.join(__dirname, '..', '..', 'logs', 'access.log');
+// 'path' is already required above for env loading
+const LOG_PATH = process.env.ACCESS_LOG_PATH || require('path').join(__dirname, '..', '..', 'logs', 'access.log');
 
 function ensureLogDir() {
   try {
@@ -85,8 +95,13 @@ app.use(cors({
 // Access logger
 const accessLogger = require('./middleware/access-logger');
 app.use(accessLogger());
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
+
+// Body parsing middleware
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Initialize passport
+app.use(passport.initialize());
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -99,6 +114,8 @@ app.get('/health', (req, res) => {
 });
 
 // Routes
+app.use('/auth', require('./routes/auth'));
+// Backwards-compatible mount for clients expecting /api/auth/*
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/users', require('./routes/user'));
 app.use('/api/chat', require('./routes/chat-api'));
