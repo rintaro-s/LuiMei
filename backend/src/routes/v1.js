@@ -12,6 +12,11 @@ const deviceController = require('../controllers/device-controller');
 const userController = require('../controllers/user-controller');
 const statusController = require('../controllers/status-controller');
 const communicationController = require('../controllers/communication-controller');
+const calendarController = require('../controllers/calendar-controller');
+const wakeWordController = require('../controllers/wake-word-controller');
+const sleepController = require('../controllers/sleep-controller');
+const studyController = require('../controllers/study-controller');
+const ttsController = require('../controllers/tts-controller');
 const { requireAuth } = require('../controllers/auth-controller');
 
 // Public monitoring endpoints (no auth)
@@ -45,12 +50,55 @@ router.use(requireAuth);
 
 // Communication API - main message endpoint
 router.post('/communication/message', communicationController.sendMessage);
+router.post('/communication/voice/input', communicationController.handleVoiceInput);
+router.post('/communication/command/device', communicationController.executeDeviceCommand);
 
 // Vision API - image analysis
 router.post('/vision/analyze', visionApiController.analyzeImage);
+router.post('/communication/vision/analyze', communicationController.analyzeImage);
+
+// TTS - Text to Speech
+router.post('/communication/tts/speak', ttsController.synthesizeSpeech);
+router.post('/communication/tts/stream', ttsController.streamSpeech);
+router.get('/voices', ttsController.getAvailableVoices);
+
+// Calendar API - Google Calendar integration
+router.get('/calendar/today', calendarController.getTodayEvents);
+router.get('/calendar/week', calendarController.getWeeklyEvents);
+router.post('/calendar/events', calendarController.createEvent);
+router.get('/calendar/progress', calendarController.checkProgress);
+
+// Wake Word API
+router.get('/wake-word/settings', wakeWordController.getWakeWordSettings);
+router.post('/wake-word/settings', wakeWordController.updateWakeWordSettings);
+router.post('/wake-word/detect', wakeWordController.processWakeWordDetection);
+
+// Sleep & Alarm API
+router.post('/sleep/alarms', sleepController.setAlarm);
+router.get('/sleep/alarms', sleepController.getAlarms);
+router.delete('/sleep/alarms/:alarmId', sleepController.deleteAlarm);
+router.post('/sleep/records', sleepController.recordSleep);
+router.get('/sleep/data', sleepController.getSleepData);
+router.post('/sleep/oversleep', sleepController.handleOversleep);
+
+// Study Assistant API
+router.post('/study/analyze', studyController.analyzeStudyMaterial);
+router.post('/study/progress', studyController.recordStudyProgress);
+router.post('/study/sessions/start', studyController.startStudySession);
+router.post('/study/sessions/end', studyController.endStudySession);
+router.get('/study/stats', studyController.getStudyStats);
+router.get('/study/advice', studyController.getStudyAdvice);
 
 // Device list endpoint
 router.get('/devices/list', deviceController.listDevices);
+router.post('/devices/command', deviceController.executeCommand);
+router.get('/devices/:deviceId/capabilities', deviceController.getCapabilities);
+
+// Device control and messaging (protected by auth middleware)
+router.post('/device/phone/settings', deviceController.controlPhoneSettings);
+router.post('/device/line/message', deviceController.sendLineMessage);
+router.post('/device/discord/message', deviceController.sendDiscordMessage);
+router.post('/device/integrated/action', deviceController.executeIntegratedAction);
 
 // 1) Assistant API - 対話＋TTS統合応答
 router.post('/assistant/reply', assistantController.reply);

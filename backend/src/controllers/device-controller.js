@@ -392,6 +392,217 @@ const getCapabilities = async (req, res) => {
   }
 };
 
+/**
+ * スマホ設定の制御（DND、Wi-Fi等）
+ */
+const controlPhoneSettings = async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.body.userId;
+    const { action, setting, value } = req.body;
+    
+    const supportedSettings = {
+      'dnd': 'Do Not Disturb',
+      'wifi': 'Wi-Fi',
+      'bluetooth': 'Bluetooth',
+      'brightness': 'Screen Brightness',
+      'volume': 'Volume',
+      'airplane': 'Airplane Mode'
+    };
+    
+    if (!supportedSettings[setting]) {
+      return res.status(400).json({
+        success: false,
+        error: 'UnsupportedSetting',
+        message: `Setting ${setting} is not supported`,
+        supportedSettings: Object.keys(supportedSettings)
+      });
+    }
+    
+    // WebSocket経由でクライアントに設定変更を指示
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user_${userId}`).emit('phone_setting_control', {
+        action,
+        setting,
+        value,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    console.log(`Phone setting control: ${userId} - ${setting} ${action} ${value}`);
+    
+    res.json({
+      success: true,
+      message: `${supportedSettings[setting]} ${action} command sent`,
+      setting,
+      action,
+      value
+    });
+  } catch (error) {
+    console.error('Failed to control phone settings:', error);
+    res.status(500).json({
+      success: false,
+      error: 'DeviceControlError',
+      message: 'Failed to control phone settings'
+    });
+  }
+};
+
+/**
+ * LINE メッセージ送信
+ */
+const sendLineMessage = async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.body.userId;
+    const { recipientId, message, replyToMessageId } = req.body;
+    
+    // WebSocket経由でクライアントにメッセージ送信を指示
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user_${userId}`).emit('line_message_send', {
+        recipientId,
+        message,
+        replyToMessageId,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    res.json({
+      success: true,
+      message: 'LINE message sent',
+      recipientId,
+      messageText: message
+    });
+  } catch (error) {
+    console.error('Failed to send LINE message:', error);
+    res.status(500).json({
+      success: false,
+      error: 'LineMessageError',
+      message: 'Failed to send LINE message'
+    });
+  }
+};
+
+/**
+ * Discord メッセージ送信
+ */
+const sendDiscordMessage = async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.body.userId;
+    const { channelId, message, guildId } = req.body;
+    
+    // WebSocket経由でクライアントにメッセージ送信を指示
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user_${userId}`).emit('discord_message_send', {
+        channelId,
+        message,
+        guildId,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    res.json({
+      success: true,
+      message: 'Discord message sent',
+      channelId,
+      messageText: message
+    });
+  } catch (error) {
+    console.error('Failed to send Discord message:', error);
+    res.status(500).json({
+      success: false,
+      error: 'DiscordMessageError',
+      message: 'Failed to send Discord message'
+    });
+  }
+};
+
+/**
+ * 統合操作（複数デバイス/サービスの連携）
+ */
+const executeIntegratedAction = async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.body.userId;
+    const { actionName, parameters } = req.body;
+    
+    // 定義済みの統合操作
+    const integratedActions = {
+      'goodnight': {
+        description: '就寝モード: DND有効、照明オフ、音量下げる',
+        steps: [
+          { type: 'phone', action: 'enable', setting: 'dnd' },
+          { type: 'smart_device', command: 'lights_off', deviceId: 'bedroom_lights' },
+          { type: 'phone', action: 'set', setting: 'volume', value: 10 }
+        ]
+      },
+      'morning': {
+        description: '起床モード: DND解除、照明オン、天気情報取得',
+        steps: [
+          { type: 'phone', action: 'disable', setting: 'dnd' },
+          { type: 'smart_device', command: 'lights_on', deviceId: 'bedroom_lights' },
+          { type: 'calendar', action: 'get_today_events' }
+        ]
+      },
+      'work_mode': {
+        description: '作業モード: DND有効、集中用音楽再生',
+        steps: [
+          { type: 'phone', action: 'enable', setting: 'dnd' },
+          { type: 'smart_device', command: 'play_music', parameters: { playlist: 'focus' } }
+        ]
+      }
+    };
+    
+    if (!integratedActions[actionName]) {
+      return res.status(400).json({
+        success: false,
+        error: 'UnknownAction',
+        message: `Action ${actionName} is not defined`,
+        availableActions: Object.keys(integratedActions)
+      });
+    }
+    
+    const action = integratedActions[actionName];
+    const results = [];
+    
+    // WebSocket経由で統合操作を順次実行
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user_${userId}`).emit('integrated_action_start', {
+        actionName,
+        description: action.description,
+        steps: action.steps,
+        timestamp: new Date().toISOString()
+      });
+      
+      // 各ステップを順次実行
+      for (const step of action.steps) {
+        io.to(`user_${userId}`).emit('integrated_action_step', {
+          actionName,
+          step,
+          timestamp: new Date().toISOString()
+        });
+        results.push({ step, status: 'executed' });
+      }
+    }
+    
+    res.json({
+      success: true,
+      actionName,
+      description: action.description,
+      results,
+      executedSteps: action.steps.length
+    });
+  } catch (error) {
+    console.error('Failed to execute integrated action:', error);
+    res.status(500).json({
+      success: false,
+      error: 'IntegratedActionError',
+      message: 'Failed to execute integrated action'
+    });
+  }
+};
+
 module.exports = {
   // Legacy endpoints
   discoverDevices,
@@ -405,5 +616,11 @@ module.exports = {
   
   // Device management
   registerDevice,
-  unregisterDevice
+  unregisterDevice,
+  
+  // Extended functionality
+  controlPhoneSettings,
+  sendLineMessage,
+  sendDiscordMessage,
+  executeIntegratedAction
 };

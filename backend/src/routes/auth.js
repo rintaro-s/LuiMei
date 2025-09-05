@@ -43,10 +43,15 @@ const validateLogin = [
     .withMessage('Password is required')
 ];
 
+// Accept either `refresh` or `refreshToken` in request body for compatibility
 const validateRefreshToken = [
-  body('refreshToken')
-    .notEmpty()
-    .withMessage('Refresh token is required')
+  (req, res, next) => {
+    if (!req.body) return res.status(400).json({ success: false, error: 'Refresh token required' });
+    if (!req.body.refresh && !req.body.refreshToken) {
+      return res.status(400).json({ success: false, error: 'Refresh token required' });
+    }
+    next();
+  }
 ];
 
 // Google OAuth routes
@@ -84,7 +89,7 @@ router.get('/google/callback',
       // Prepare deep link including both tokens (client can prefer accessToken)
       const callbackUrl = process.env.MOBILE_APP_CALLBACK_URL || 'meimi://auth/callback';
   // URL-encode tokens to ensure the deep link is safe
-  const deepLink = `${callbackUrl}?token=${encodeURIComponent(tokens.accessToken)}&refresh=${encodeURIComponent(tokens.refreshToken)}&success=true`;
+  const deepLink = `${callbackUrl}?access=${encodeURIComponent(tokens.accessToken)}&refresh=${encodeURIComponent(tokens.refreshToken)}&success=true`;
 
       // If the requester accepts HTML (typical browser), render a fallback page that tries to open the deep link
       const accept = (req.headers['accept'] || '').toLowerCase();

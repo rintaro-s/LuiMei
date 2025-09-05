@@ -226,6 +226,25 @@ const login = async (req, res) => {
 
     // Generate tokens
     const tokens = generateTokens(user.userId || user._id);
+    // Persist tokens and update login metadata for real users
+    try {
+      if (user && user.updateAccessToken) {
+        await user.updateAccessToken(tokens.accessToken, tokens.refreshToken);
+      } else if (user && user.userId) {
+        // If user is a Mongoose doc
+        try {
+          user.accessToken = tokens.accessToken;
+          user.refreshToken = tokens.refreshToken;
+          user.lastLogin = new Date();
+          user.loginCount = (user.loginCount || 0) + 1;
+          if (user.save) await user.save();
+        } catch (e) {
+          // non-fatal
+        }
+      }
+    } catch (e) {
+      console.log('Failed to persist tokens on login:', e.message);
+    }
 
     // Prepare response data - CLIENT COMPATIBLE FORMAT
     const responseData = {
@@ -336,35 +355,55 @@ const getProfile = async (req, res) => {
 // Refresh token
 const refreshToken = async (req, res) => {
   try {
-    const { refreshToken } = req.body;
+    // Accept both `refresh` and `refreshToken` fields for compatibility
+    const incomingRefresh = req.body && (req.body.refresh || req.body.refreshToken);
 
-    if (!refreshToken) {
+    if (!incomingRefresh) {
       return res.status(400).json({
         success: false,
         error: 'Refresh token required'
       });
     }
 
-    // Verify refresh token
-    const decoded = jwt.verify(
-      refreshToken,
-      process.env.JWT_REFRESH_SECRET || 'your-refresh-secret-key'
-    );
-
-    if (decoded.tokenType !== 'refresh') {
-      return res.status(401).json({
-        success: false,
-        error: 'Invalid token type'
-      });
+    // Verify refresh token and validate against stored refresh token
+    let decoded;
+    try {
+      decoded = jwt.verify(
+        incomingRefresh,
+        process.env.JWT_REFRESH_SECRET || 'your-refresh-secret-key'
+      );
+    } catch (vErr) {
+      return res.status(401).json({ success: false, error: 'Invalid refresh token' });
     }
 
-    // Generate new tokens
-    const tokens = generateTokens(decoded.userId);
+    if (decoded.tokenType !== 'refresh') {
+      return res.status(401).json({ success: false, error: 'Invalid token type' });
+    }
 
-    res.status(200).json({
-      success: true,
-      data: { tokens }
-    });
+    // Find user and verify stored refresh token (if DB present)
+  const User = require('../models/User');
+    const user = await User.findOne({ userId: decoded.userId });
+    if (user) {
+      if (!user.refreshToken || user.refreshToken !== incomingRefresh) {
+        return res.status(401).json({ success: false, error: 'Refresh token mismatch' });
+      }
+    }
+
+    // Generate new tokens and persist
+  const tokens = generateTokens(decoded.userId);
+    if (user) {
+      try {
+        user.accessToken = tokens.accessToken;
+        user.refreshToken = tokens.refreshToken;
+        user.lastLogin = new Date();
+        await user.save();
+      } catch (e) {
+        // ignore persistence error but still return tokens
+        console.log('Failed to persist refreshed tokens:', e.message);
+      }
+    }
+
+  res.status(200).json({ success: true, data: { tokens } });
 
   } catch (error) {
     console.error('Token refresh error:', error);
@@ -441,11 +480,36 @@ const requireAuth = async (req, res, next) => {
 const logout = async (req, res) => {
   try {
     // In a real implementation, you would invalidate the token
-    // For now, just return success
-    res.status(200).json({
-      success: true,
-      message: 'Logged out successfully'
-    });
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      return res.status(400).json({ success: false, message: 'No authorization header provided' });
+    }
+
+    const token = authHeader.split(' ')[1];
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    } catch (e) {
+      return res.status(400).json({ success: false, message: 'Invalid token' });
+    }
+
+  const User = require('../models/User');
+    try {
+      const user = await User.findOne({ userId: decoded.userId });
+      if (user) {
+        user.status = user.status || {};
+        user.status.isOnline = false;
+        user.status.lastActiveAt = new Date();
+        // Clear stored tokens to invalidate server-side session
+        user.accessToken = null;
+        user.refreshToken = null;
+        await user.save();
+      }
+    } catch (e) {
+      console.log('Logout persistence error:', e.message);
+    }
+
+    res.status(200).json({ success: true, message: 'Logged out successfully' });
   } catch (error) {
     console.error('Logout error:', error);
     res.status(500).json({

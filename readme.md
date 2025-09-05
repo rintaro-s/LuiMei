@@ -60,7 +60,7 @@ npm start
 1. クライアント（Android）はブラウザまたはカスタムタブで `https://<SERVER_HOST>/auth/google` にアクセス。
 2. Google の認証画面でユーザーが認可。
 3. サーバーが Google からコールバックを受け取り、ユーザーを作成/更新。サーバー側で JWT を作成。
-4. サーバーはモバイルのリダイレクト先 (`MOBILE_APP_CALLBACK_URL`) に `?token=<JWT>` 付きでリダイレクト。
+4. サーバーはモバイルのリダイレクト先 (`MOBILE_APP_CALLBACK_URL`) に `?access=<ACCESS_TOKEN>&refresh=<REFRESH_TOKEN>` を付与してリダイレクト。
 5. Android アプリは受け取った JWT を保存し、以降の REST / Socket.IO 接続で使用する。
 
 セキュリティ注意:
@@ -70,7 +70,7 @@ npm start
 ## 6. サーバー側 OAuth エンドポイント
 
 - `GET  /auth/google` — Google 認証開始
-- `GET  /auth/google/callback` — Google からのコールバック。成功時に `MOBILE_APP_CALLBACK_URL?token=<JWT>` にリダイレクト。
+-- `GET  /auth/google/callback` — Google からのコールバック。成功時に `MOBILE_APP_CALLBACK_URL?access=<ACCESS_TOKEN>&refresh=<REFRESH_TOKEN>` にリダイレクト。
 - `POST /auth/logout` — JWT を使ったログアウト（ユーザーのオンライン状態を更新）
 - `GET  /auth/profile` — JWT で保護されたユーザープロファイル取得
 
