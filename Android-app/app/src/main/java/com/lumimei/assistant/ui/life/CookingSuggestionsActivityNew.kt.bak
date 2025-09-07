@@ -1,0 +1,60 @@
+package com.lumimei.assistant.ui.life
+
+import android.os.Bundle
+import androidx.appcompat.app.AppCompatActivity
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import com.lumimei.assistant.R
+import com.lumimei.assistant.data.models.BackendCompatibleModels
+
+class CookingSuggestionsActivity : AppCompatActivity() {
+    
+    private lateinit var recyclerView: RecyclerView
+    private lateinit var adapter: CookingSuggestionsAdapter
+    private val recipes = mutableListOf<BackendCompatibleModels.Recipe>()
+    
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_cooking_suggestions)
+        
+        setupRecyclerView()
+        loadSuggestions()
+    }
+    
+    private fun setupRecyclerView() {
+        recyclerView = findViewById(R.id.recyclerView)
+        adapter = CookingSuggestionsAdapter(recipes) { recipe ->
+            // Handle recipe click
+        }
+        recyclerView.layoutManager = LinearLayoutManager(this)
+        recyclerView.adapter = adapter
+    }
+    
+    private fun loadSuggestions() {
+        // Sample data
+        recipes.addAll(listOf(
+            BackendCompatibleModels.Recipe(
+                id = "1",
+                name = "簡単チャーハン",
+                cookingTime = 15,
+                difficulty = "簡単",
+                ingredients = listOf("ご飯", "卵", "ねぎ", "醤油", "塩")
+            ),
+            BackendCompatibleModels.Recipe(
+                id = "2", 
+                name = "野菜炒め",
+                cookingTime = 10,
+                difficulty = "簡単",
+                ingredients = listOf("キャベツ", "にんじん", "もやし", "醤油")
+            ),
+            BackendCompatibleModels.Recipe(
+                id = "3",
+                name = "味噌汁",
+                cookingTime = 5,
+                difficulty = "簡単", 
+                ingredients = listOf("味噌", "だし", "わかめ", "豆腐")
+            )
+        ))
+        adapter.notifyDataSetChanged()
+    }
+}

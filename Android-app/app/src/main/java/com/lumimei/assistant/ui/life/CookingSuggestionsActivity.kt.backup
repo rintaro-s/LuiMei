@@ -1,0 +1,83 @@
+package com.lumimei.assistant.ui.life
+
+import android.os.Bundle
+import android.view.View
+import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.LinearLayoutManager
+import com.lumimei.assistant.databinding.ActivityCookingSuggestionsBinding
+import com.lumimei.assistant.network.ApiClient
+import com.lumimei.assistant.data.preferences.SecurePreferences
+import com.lumimei.assistant.data.models.BackendCompatibleModels.Recipe
+import kotlinx.coroutines.launch
+
+class CookingSuggestionsActivity_Backup : AppCompatActivity() {
+    
+    private lateinit var binding: ActivityCookingSuggestionsBinding
+    private lateinit var securePreferences: SecurePreferences
+    private lateinit var adapter: CookingSuggestionsAdapter
+    private val recipes = mutableListOf<Recipe>()
+    
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        binding = ActivityCookingSuggestionsBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+        
+        securePreferences = SecurePreferences(this)
+        
+        setupUI()
+        loadCookingSuggestions()
+    }
+    
+    private fun setupUI() {
+        binding.btnBack.setOnClickListener {
+            finish()
+        }
+        
+        adapter = CookingSuggestionsAdapter(suggestions) { suggestion ->
+            // 料理詳細画面への遷移
+            showRecipeDetails(suggestion)
+        }
+        
+        binding.recyclerCookingSuggestions.layoutManager = LinearLayoutManager(this)
+        binding.recyclerCookingSuggestions.adapter = adapter
+        
+        // 食事時間フィルター
+        binding.chipBreakfast.setOnClickListener { loadCookingSuggestions("breakfast") }
+        binding.chipLunch.setOnClickListener { loadCookingSuggestions("lunch") }
+        binding.chipDinner.setOnClickListener { loadCookingSuggestions("dinner") }
+        binding.chipAll.setOnClickListener { loadCookingSuggestions() }
+    }
+    
+    private fun loadCookingSuggestions(mealTime: String? = null) {
+        lifecycleScope.launch {
+            try {
+                binding.progressBar.visibility = View.VISIBLE
+                
+                val response = ApiClient(this@CookingSuggestionsActivity, securePreferences)
+                    .apiService.getCookingSuggestions(mealTime)
+                    
+                if (response.isSuccessful && response.body()?.success == true) {
+                    val data = response.body()?.data
+                    data?.suggestions?.let { newSuggestions ->
+                        suggestions.clear()
+                        suggestions.addAll(newSuggestions)
+                        adapter.notifyDataSetChanged()
+                        
+                        binding.tvMealTime.text = data.mealTime
+                        binding.tvSuggestionCount.text = "${suggestions.size}件の提案"
+                    }
+                }
+            } catch (e: Exception) {
+                // エラーハンドリング
+            } finally {
+                binding.progressBar.visibility = View.GONE
+            }
+        }
+    }
+    
+    private fun showRecipeDetails(suggestion: CookingSuggestion) {
+        // レシピ詳細ダイアログまたは画面を表示
+        // TODO: 実装
+    }
+}

@@ -40,9 +40,16 @@ function logAuthFailure(entry) {
 }
 
 // Generate tokens
-const generateTokens = (userId) => {
+const generateTokens = (userId, userInfo = {}) => {
+  const accessTokenPayload = { 
+    userId, 
+    tokenType: 'access',
+    email: userInfo.email,
+    displayName: userInfo.displayName
+  };
+  
   const accessToken = jwt.sign(
-    { userId, tokenType: 'access' },
+    accessTokenPayload,
     process.env.JWT_SECRET || 'your-secret-key',
     { expiresIn: '1h' }
   );

@@ -4,6 +4,8 @@
  */
 
 const { google } = require('googleapis');
+const ChatMessage = require('../models/ChatMessage');
+const User = require('../models/User');
 
 // Helper function to generate mock responses
 function generateMockResponse(message, context = {}) {
@@ -40,12 +42,17 @@ async function callLLM(message, context = {}, options = {}) {
   const apiUrl = process.env.LLM_API_URL || defaultClientUrl;
 
   // Construct system prompt
-  const systemPrompt = process.env.LLM_SYSTEM_PROMPT || (
+  let systemPrompt = process.env.LLM_SYSTEM_PROMPT || (
     `You are LumiMei assistant. Respond in Japanese when user input is Japanese. ` +
     `Always begin your entire response with a single line that starts with 'LLM-TAGS:' followed by semicolon-separated key=value pairs when relevant. ` +
     `Do NOT return JSON. After the LLM-TAGS line, include a human-readable explanation in natural language. ` +
     `Tags can include: calendar_api=true/false, calendar_action=list_events/create_event, date=YYYY-MM-DD, device_command=..., etc.`
   );
+
+  // Incorporate desired tone into the system prompt if provided
+  if (options && options.tone) {
+    systemPrompt += `\nUser desired tone: ${options.tone}`;
+  }
 
   // If calling the legacy client.py endpoint (default), use its expected payload shape
   const isClientPy = apiUrl.includes('127.0.0.1:8000') || apiUrl.includes('localhost');
@@ -53,7 +60,18 @@ async function callLLM(message, context = {}, options = {}) {
   const clientPayload = {
     user_id: options.userId || context.userId || 'default_user',
     text: message,
-    role_sheet: options.role_sheet || context.role_sheet || null,
+    role_sheet: (() => {
+      // role_sheet should be a dictionary/object for most LLM endpoints.
+      // Accept provided object, or convert a simple tone into { tone: ... }.
+      const provided = options.role_sheet || context.role_sheet || null;
+      if (provided && typeof provided === 'object') return provided;
+      if (provided && typeof provided === 'string' && provided.trim().length > 0) {
+        // try to preserve string role_sheet if present
+        return { content: provided };
+      }
+      if (options.tone) return { tone: options.tone };
+      return null;
+    })(),
     over_hallucination: options.over_hallucination || false,
     history: options.history || context.history || [],
     compressed_memory: options.compressed_memory || context.compressed_memory || null
@@ -98,19 +116,51 @@ async function callLLM(message, context = {}, options = {}) {
 }
 
 function parseLlmTags(text) {
-  const lines = (text || '').split('\n');
+  const raw = (text || '');
+  const lines = raw.split('\n');
   const first = lines[0] || '';
-  const result = { tags: {}, body: lines.slice(1).join('\n') };
+  const result = { tags: {}, body: raw };
+
+  // If first line contains LLM-TAGS:, parse and return remainder as body
   if (first.startsWith('LLM-TAGS:')) {
     const payload = first.replace('LLM-TAGS:', '').trim();
-    if (payload.length === 0) return result;
-    const parts = payload.split(';').map(p => p.trim()).filter(Boolean);
+    const parts = payload.length ? payload.split(';').map(p => p.trim()).filter(Boolean) : [];
     parts.forEach(p => {
       const [k, v] = p.split('=').map(s => s.trim());
       if (k) result.tags[k] = v === undefined ? true : v;
     });
+    // Preserve entire body after first line, trimmed of leading/trailing whitespace
+    result.body = lines.slice(1).join('\n').trim();
+  } else {
+    // No tags: treat whole text as body unchanged
+    result.body = raw.trim();
   }
+
   return result;
+}
+
+// ゲストユーザーの確保（存在しない場合は作成）
+async function ensureGuestUser(userId) {
+  try {
+    let user = await User.findOne({ userId });
+    
+    if (!user) {
+      user = new User({
+        userId: userId,
+        email: `${userId}@guest.local`,
+        displayName: 'ゲストユーザー',
+        isGuest: true,
+        provider: 'guest'
+      });
+      await user.save();
+      console.log('Guest user created:', userId);
+    }
+    
+    return user;
+  } catch (error) {
+    console.error('Error ensuring guest user:', error);
+    throw error;
+  }
 }
 
 // Send message endpoint - CLIENT COMPATIBLE VERSION (LLM tag protocol)
@@ -130,11 +180,13 @@ const sendMessage = async (req, res) => {
       });
     }
 
+    // ゲストユーザーの確保
+    await ensureGuestUser(userId);
+
     // Resolve user (req.user may be present from auth middleware)
     let user = req.user;
     if (!user) {
       try {
-        const User = require('../models/User');
         user = await User.findOne({ userId: userId });
       } catch (e) { user = null; }
     }
@@ -142,8 +194,27 @@ const sendMessage = async (req, res) => {
     const messageId = generateMessageId();
     const sessionId = options.sessionId || 'session_' + Date.now();
 
+    // ユーザーメッセージをデータベースに保存
+    const userMessage = new ChatMessage({
+      userId,
+      sessionId,
+      messageId: messageId + '_user',
+      role: 'user',
+      content: message,
+      messageType,
+      metadata: {
+        context,
+        processing: {
+          receivedAt: new Date()
+        }
+      }
+    });
+    await userMessage.save();
+
     // Call LLM (mock or real integration)
+    const startTime = Date.now();
     const llmRaw = await callLLM(message, context, options);
+    const responseTime = Date.now() - startTime;
     const parsed = parseLlmTags(llmRaw);
 
     // Default response body from LLM
@@ -192,10 +263,45 @@ const sendMessage = async (req, res) => {
 
           assistantText += `\n\n(取得した予定: ${items.length} 件)`;
         } catch (e) {
-          console.error('Calendar fetch error:', e.message);
-          assistantText += '\n\n(カレンダーの取得に失敗しました)';
+          console.error('Calendar API error:', e);
+          assistantText += '\n\n(カレンダー取得中にエラーが発生しました)';
         }
       }
+    }
+
+    // アシスタントメッセージをデータベースに保存
+    const assistantMessage = new ChatMessage({
+      userId,
+      sessionId,
+      messageId: messageId + '_assistant',
+      role: 'assistant',
+      content: assistantText,
+      messageType: 'text',
+      metadata: {
+        context,
+        processing: {
+          responseTime,
+          model: 'mock-llm',
+          llmTags: parsed.tags
+        }
+      }
+    });
+    await assistantMessage.save();
+
+    // ユーザーの使用量更新
+    if (user && typeof user.incrementUsage === 'function') {
+      await user.incrementUsage('message', 1);
+    } else if (user) {
+      // Fallback for guest users - update directly
+      await User.findByIdAndUpdate(user._id, {
+        $inc: {
+          'usage.totalMessages': 1,
+          'usage.monthlyUsage.messages': 1
+        },
+        $set: {
+          'usage.lastActivityDate': new Date()
+        }
+      });
     }
 
     // Prepare response
@@ -212,7 +318,7 @@ const sendMessage = async (req, res) => {
         timestamp: new Date().toISOString(),
         messageType,
         userId,
-        processingTime: Math.floor(Math.random() * 200) + 50,
+        processingTime: responseTime,
         parsedTags: parsed.tags,
         ...extra
       }
@@ -320,60 +426,146 @@ const handleVoiceInput = async (req, res) => {
 
 // Speech-to-Text implementation
 async function performSpeechToText(audioData, format, options = {}) {
-  const sttUrl = process.env.STT_API_URL || 'http://127.0.0.1:9000/asr';
-  
+  // Do NOT default to a local HTTP STT that isn't configured.
+  const configuredSttUrl = process.env.STT_API_URL || null;
+
+  // First try local VOSK via Python helper
   try {
-    // Convert base64 to buffer if needed
-    const audioBuffer = Buffer.isBuffer(audioData) ? audioData : Buffer.from(audioData, 'base64');
-    
-    // Prepare request body based on STT service
-    const formData = new FormData();
-    formData.append('audio', audioBuffer, { filename: `audio.${format || 'wav'}` });
-    formData.append('language', options.language || 'ja');
-    
-    const headers = { 'Content-Type': 'multipart/form-data' };
-    if (process.env.STT_API_KEY) {
-      headers['Authorization'] = `Bearer ${process.env.STT_API_KEY}`;
-    }
+    const local = await performLocalSTT(audioData, format, options);
+    if (local && local.text) return local;
+  } catch (e) {
+    console.warn('Local STT helper failed or unavailable:', e.message || e);
+  }
 
-    const response = await fetch(sttUrl, {
-      method: 'POST',
-      headers,
-      body: formData
-    });
-
-    if (!response.ok) {
-      throw new Error(`STT API error: ${response.status} ${response.statusText}`);
-    }
-
-    const result = await response.json();
-    
-    return {
-      text: result.text || result.transcript || result.result || '',
-      confidence: result.confidence || result.score || 0.8
-    };
-
-  } catch (error) {
-    console.error('STT API call failed:', error);
-    
-    // Fallback: Use local Whisper or alternative
+  // Next, if an external STT API is configured, call it
+  if (configuredSttUrl) {
     try {
-      return await performLocalSTT(audioData, format, options);
-    } catch (localError) {
-      console.error('Local STT also failed:', localError);
-      throw new Error('All STT methods failed');
+      const audioBuffer = Buffer.isBuffer(audioData) ? audioData : Buffer.from(audioData, 'base64');
+      const { FormData } = await import('formdata-node');
+      const { Blob } = await import('node:buffer');
+
+      const formData = new FormData();
+      const audioBlob = new Blob([audioBuffer], { type: `audio/${format || 'wav'}` });
+      formData.append('audio', audioBlob, `audio.${format || 'wav'}`);
+      formData.append('language', options.language || 'ja');
+
+      const headers = {};
+      if (process.env.STT_API_KEY) headers['Authorization'] = `Bearer ${process.env.STT_API_KEY}`;
+
+      const response = await fetch(configuredSttUrl, { method: 'POST', headers, body: formData });
+      if (!response.ok) throw new Error(`STT API error: ${response.status} ${response.statusText}`);
+      const result = await response.json();
+      return { text: result.text || result.transcript || result.result || '', confidence: result.confidence || result.score || 0.8 };
+    } catch (err) {
+      console.warn('External STT API failed:', err.message || err);
     }
   }
+
+  // Finally, if OPENAI key is set, call OpenAI Audio Transcription (whisper-1)
+  if (process.env.OPENAI_API_KEY) {
+    try {
+      const audioBuffer = Buffer.isBuffer(audioData) ? audioData : Buffer.from(audioData, 'base64');
+      const { FormData, fileFromPath } = await import('formdata-node');
+      const { Blob } = await import('node:buffer');
+      const formData = new FormData();
+      const audioBlob = new Blob([audioBuffer], { type: `audio/${format || 'wav'}` });
+      formData.append('file', audioBlob, `audio.${format || 'wav'}`);
+      formData.append('model', 'whisper-1');
+
+      const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+        body: formData
+      });
+      if (!response.ok) throw new Error(`OpenAI STT error: ${response.status} ${response.statusText}`);
+      const j = await response.json();
+      return { text: j.text || j.transcription || '', confidence: j.confidence || 0.85 };
+    } catch (openErr) {
+      console.warn('OpenAI STT failed:', openErr.message || openErr);
+    }
+  }
+
+  throw new Error('No available STT method succeeded. Configure VOSK model, STT_API_URL, or OPENAI_API_KEY.');
 }
 
-// Local STT fallback (simplified)
+// Local STT fallback (simplified - returns mock transcription)
 async function performLocalSTT(audioData, format, options = {}) {
-  // This would integrate with local Whisper, DeepSpeech, or similar
-  // For now, return mock data to maintain functionality
-  return {
-    text: '音声認識のローカル処理が実装されていません',
-    confidence: 0.1
-  };
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const os = require('os');
+    const child_process = require('child_process');
+
+    console.log('Attempting local STT using Python VOSK helper');
+
+    const modelPath = process.env.VOSK_MODEL_PATH || path.resolve(process.cwd(), 'vosk-model-ja-0.22');
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'meimi-stt-'));
+    const wavPath = path.join(tempDir, `input.wav`);
+
+    // Ensure audioBuffer is PCM16 WAV. If raw, try to write as WAV header + data.
+    let audioBuffer = Buffer.isBuffer(audioData) ? audioData : Buffer.from(audioData, 'base64');
+
+    // If input doesn't have WAV header, wrap it as WAV PCM16
+    if (audioBuffer.length < 44 || !audioBuffer.slice(0, 4).equals(Buffer.from('RIFF'))) {
+      // Create WAV header for PCM16, 16kHz mono
+      const sampleRate = options.sampleRate || 16000;
+      const channels = 1;
+      const bitsPerSample = 16;
+      const dataSize = audioBuffer.length;
+      const fileSize = 36 + dataSize;
+      
+      const header = Buffer.alloc(44);
+      header.write('RIFF', 0);                          // ChunkID
+      header.writeUInt32LE(fileSize, 4);                // ChunkSize
+      header.write('WAVE', 8);                          // Format
+      header.write('fmt ', 12);                         // Subchunk1ID
+      header.writeUInt32LE(16, 16);                     // Subchunk1Size
+      header.writeUInt16LE(1, 20);                      // AudioFormat (PCM)
+      header.writeUInt16LE(channels, 22);               // NumChannels
+      header.writeUInt32LE(sampleRate, 24);             // SampleRate
+      header.writeUInt32LE(sampleRate * channels * bitsPerSample / 8, 28); // ByteRate
+      header.writeUInt16LE(channels * bitsPerSample / 8, 32); // BlockAlign
+      header.writeUInt16LE(bitsPerSample, 34);          // BitsPerSample
+      header.write('data', 36);                         // Subchunk2ID
+      header.writeUInt32LE(dataSize, 40);               // Subchunk2Size
+      
+      audioBuffer = Buffer.concat([header, audioBuffer]);
+    }
+
+    fs.writeFileSync(wavPath, audioBuffer);
+
+    if (fs.existsSync(modelPath)) {
+      // Call python helper
+      try {
+        const py = process.env.PYTHON_BIN || 'python';
+        const script = path.resolve(process.cwd(), 'backend', 'tools', 'vosk_stt.py');
+        const args = [script, wavPath, modelPath, String(options.sampleRate || 16000)];
+        const out = child_process.execFileSync(py, args, { 
+          encoding: 'utf8', 
+          stdio: ['ignore', 'pipe', 'pipe'],
+          env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
+        });
+        const parsed = JSON.parse(out);
+        if (parsed.error) {
+          console.error('Python VOSK failed:', parsed);
+        } else {
+          // cleanup
+          try { fs.unlinkSync(wavPath); fs.rmdirSync(tempDir, { recursive: true }); } catch(_){}
+          return { text: parsed.text || '', confidence: parsed.confidence || 0.85 };
+        }
+      } catch (pyErr) {
+        console.error('Calling python VOSK helper failed:', pyErr.message || pyErr.toString());
+      }
+    }
+
+    // Fallback to a more robust external STT service or whisper if available
+    console.log('VOSK model not found or python helper failed, falling back to external STT if configured');
+    throw new Error('Local VOSK unavailable');
+
+  } catch (e) {
+    console.error('Local STT failed:', e.message || e);
+    return { text: '', confidence: 0.0 };
+  }
 }
 
 // Analyze image - SIMPLIFIED VERSION
@@ -383,8 +575,95 @@ const analyzeImage = async (req, res) => {
     
     const { userId, imageData, prompt, context } = req.body;
 
-    // Mock image analysis
-    const analysis = {
+    // If LM Studio (or OpenAI-compatible) endpoint is configured, call it
+    const lmstudioUrl = process.env.LMSTUDIO_API_URL; // e.g., http://127.0.0.1:1234/v1/chat/completions
+    const lmstudioModel = process.env.LMSTUDIO_MODEL || 'gemma-3-12b-it@q4_k_m';
+
+    let analysis = null;
+    let responseText = '';
+
+    if (lmstudioUrl) {
+      try {
+        const systemPrompt = (process.env.VISION_SYSTEM_PROMPT || 
+          `あなたは優秀な問題解決アシスタントです。画像を見て、この問題を解いてください。
+           
+           与えられた画像の内容を分析し、以下を含む詳細な解説を日本語で提供してください：
+           1. 画像に含まれる主要な要素や情報
+           2. 数式、図表、文字などの重要な内容の解読
+           3. 問題の解き方や手順の説明
+           4. 最終的な答えや結論
+           5. 関連する概念や知識の補足説明
+           
+           回答は丁寧で分かりやすく、構造化された形式で提供してください。`
+        ).trim();
+        
+        const userPrompt = (prompt && prompt.length > 0)
+          ? `【問題分析要求】: ${prompt}\n\n画像内の問題を解いて、詳細な解説とともに答えを教えてください。`
+          : `画像内にある問題や課題を特定し、それを解いて詳細な解説とともに答えを教えてください。もし問題が明確でない場合は、画像の内容を分析して重要な情報を抽出してください。`;
+
+        // For vision models, include the image in the message
+        const messages = [
+          { role: 'system', content: systemPrompt }
+        ];
+        
+        // If image data is provided, add it to user message (for vision-capable models)
+        if (imageData && imageData.length > 0) {
+          messages.push({
+            role: 'user',
+            content: [
+              { type: 'text', text: userPrompt },
+              { 
+                type: 'image_url', 
+                image_url: { 
+                  url: `data:image/jpeg;base64,${imageData}` 
+                } 
+              }
+            ]
+          });
+        } else {
+          messages.push({ role: 'user', content: userPrompt });
+        }
+        const payload = {
+          model: lmstudioModel,
+          messages: messages,
+          temperature: 0.3,
+          max_tokens: 2000
+        };
+
+        // Create AbortController for timeout handling
+        const abortController = new AbortController();
+        const timeoutId = setTimeout(() => abortController.abort(), 120000); // 2 minutes timeout
+
+        const resp = await fetch(lmstudioUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          signal: abortController.signal
+        });
+        
+        clearTimeout(timeoutId);
+
+        if (!resp.ok) {
+          throw new Error(`LM Studio error: ${resp.status} ${resp.statusText}`);
+        }
+
+        const data = await resp.json();
+        responseText = data.choices?.[0]?.message?.content || '';
+        analysis = {
+          description: responseText,
+          objects: [],
+          colors: [],
+          mood: 'analytical',
+          style: 'problem-solving',
+          extractedText: ''
+        };
+      } catch (e) {
+        console.error('LM Studio vision call failed, falling back to mock:', e.message);
+      }
+    }
+
+    // Mock image analysis as fallback or when LM Studio is not configured
+    if (!analysis) analysis = {
       description: '明るく温かい雰囲気の室内の写真です。テーブルの上にコーヒーカップと本が置かれています。',
       objects: [
         { name: 'テーブル', confidence: 0.95, boundingBox: [100, 200, 300, 400] },
@@ -397,7 +676,7 @@ const analyzeImage = async (req, res) => {
     };
 
     // Generate response based on analysis and prompt
-    let responseText = analysis.description;
+    if (!responseText) responseText = analysis.description;
     if (prompt) {
       responseText = `${prompt}についてお答えします。${analysis.description} 特に${analysis.objects[0]?.name}が印象的ですね。`;
     }
@@ -416,7 +695,7 @@ const analyzeImage = async (req, res) => {
         processingTime: Math.random() * 300 + 200,
         timestamp: new Date().toISOString(),
         imageSize: imageData?.length || 0,
-        analysisModel: 'lumimei-vision-mock-v1'
+  analysisModel: lmstudioUrl ? `lmstudio:${lmstudioModel}` : 'lumimei-vision-mock-v1'
       }
     };
 

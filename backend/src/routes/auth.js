@@ -75,7 +75,10 @@ router.get('/google/callback',
     try {
       const user = req.user;
       // Generate server tokens (access + refresh) using auth controller helper
-      const tokens = authController.generateTokens(user.userId || user._id);
+      const tokens = authController.generateTokens(user.userId || user._id, {
+        email: user.email,
+        displayName: user.displayName
+      });
 
       // Persist tokens to user record for server-side integrations
       if (user.updateAccessToken) {

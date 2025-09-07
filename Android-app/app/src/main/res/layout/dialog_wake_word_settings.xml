@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="24dp">
+
+        <!-- Enable Wake Word -->
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switch_wake_word_enabled"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="24dp"
+            android:text="ウェイクワード検出を有効にする"
+            android:textSize="16sp" />
+
+        <!-- Wake Phrase -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            android:hint="ウェイクフレーズ"
+            style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/edit_text_wake_phrase"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="ルミメイ" />
+
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- Sensitivity -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="検出感度"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/text_sensitivity_value"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="70%"
+            android:textSize="14sp" />
+
+        <com.google.android.material.slider.Slider
+            android:id="@+id/slider_sensitivity"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="24dp"
+            android:valueFrom="0.1"
+            android:valueTo="1.0"
+            android:value="0.7"
+            android:stepSize="0.1" />
+
+        <!-- Feedback Options -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:text="フィードバック設定"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switch_detection_sound"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:text="検出音を再生"
+            android:textSize="16sp"
+            android:checked="true" />
+
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switch_detection_vibration"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="24dp"
+            android:text="振動フィードバック"
+            android:textSize="16sp"
+            android:checked="true" />
+
+        <!-- Test Button -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/button_test_detection"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="検出テスト"
+            app:icon="@drawable/ic_mic" />
+
+        <!-- Info Text -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="注意: ウェイクワード検出機能はバックグラウンドで動作し、電池消費が増加する可能性があります。感度が高いと誤検出が増える場合があります。"
+            android:textSize="12sp"
+            android:textColor="@color/on_surface_variant" />
+
+    </LinearLayout>
+
+</androidx.core.widget.NestedScrollView>

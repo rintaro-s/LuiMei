@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LumiMei</string>
+    
+    <!-- Navigation -->
+    <string name="nav_chat">チャット</string>
+    <string name="nav_study">学習</string>
+    <string name="nav_life">生活</string>
+    <string name="nav_settings">設定</string>
+    
+    <!-- Chat -->
+    <string name="hint_message">メッセージを入力...</string>
+    <string name="button_voice">音声</string>
+    <string name="button_send">送信</string>
+    <string name="voice_recording">録音中...</string>
+    <string name="voice_stop">停止</string>
+    
+    <!-- Auth -->
+    <string name="login_required">ログインが必要です</string>
+    <string name="login_message">LumiMeiを使用するにはGoogleアカウントでログインしてください。</string>
+    <string name="login_button">ログイン</string>
+    <string name="login_later">後で</string>
+    <string name="auth_success">認証が完了しました</string>
+    <string name="auth_failed">認証に失敗しました</string>
+    
+    <!-- Permissions -->
+    <string name="permission_required">権限が必要です</string>
+    <string name="permission_audio">音声入力機能</string>
+    <string name="permission_camera">カメラ撮影機能</string>
+    <string name="permission_notifications">通知機能</string>
+    <string name="permission_settings">設定で許可</string>
+    <string name="permission_later">後で</string>
+    
+    <!-- Study -->
+    <string name="study_title">学習アシスタント</string>
+    <string name="study_take_photo">ノートを撮影</string>
+    <string name="study_analyze">分析する</string>
+    <string name="study_session_start">学習セッション開始</string>
+    <string name="study_session_end">学習セッション終了</string>
+    
+    <!-- Calendar -->
+    <string name="calendar_title">カレンダー</string>
+    <string name="calendar_today">今日</string>
+    <string name="calendar_events">予定</string>
+    <string name="calendar_no_events">予定がありません</string>
+    
+    <!-- Life Assistant -->
+    <string name="life_title">生活アシスタント</string>
+    <string name="life_shopping">買い物リスト</string>
+    <string name="life_cooking">料理提案</string>
+    <string name="life_cleaning">掃除スケジュール</string>
+    <string name="life_expenses">家計管理</string>
+    <string name="life_tips">生活のヒント</string>
+    <string name="shopping_add_item">アイテム追加</string>
+    <string name="cooking_suggestions">今日の料理</string>
+    <string name="cleaning_today">今日の掃除</string>
+    <string name="expenses_total">合計支出</string>
+    <string name="tip_of_day">今日のヒント</string>
+    
+    <!-- Settings -->
+    <string name="settings_title">設定</string>
+    <string name="settings_account">アカウント</string>
+    <string name="settings_notifications">通知</string>
+    <string name="settings_privacy">プライバシー</string>
+    <string name="settings_about">アプリについて</string>
+    <string name="settings_logout">ログアウト</string>
+    <string name="settings_wake_word">ウェイクワード</string>
+    <string name="settings_tts">音声読み上げ</string>
+    <string name="settings_voice_streaming">音声ストリーミング</string>
+    
+    <!-- Common -->
+    <string name="ok">OK</string>
+    <string name="cancel">キャンセル</string>
+    <string name="retry">再試行</string>
+    <string name="error">エラー</string>
+    <string name="loading">読み込み中...</string>
+    <string name="network_error">ネットワークエラーが発生しました</string>
+    <string name="unknown_error">不明なエラーが発生しました</string>
+    
+    <!-- Content descriptions -->
+    <string name="cd_assistant_avatar">アシスタントのアバター</string>
+    <string name="cd_user_avatar">ユーザーのアバター</string>
+    <string name="cd_voice_button">音声入力ボタン</string>
+    <string name="cd_send_button">送信ボタン</string>
+    <string name="cd_camera_button">カメラボタン</string>
+    
+    <!-- OAuth Configuration -->
+    <string name="google_client_id">746177874239-0qmf6tbe2cbroulfm1sm68cgf2sid3u4.apps.googleusercontent.com</string>
+    
+    <!-- API Configuration -->
+    <string name="api_base_url">https://53a379d340ed.ngrok-free.app</string>
+</resources>

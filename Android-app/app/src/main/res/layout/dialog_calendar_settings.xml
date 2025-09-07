@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="24dp">
+
+        <!-- Event Notifications -->
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switch_event_notifications"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            android:text="イベント通知"
+            android:textSize="16sp" />
+
+        <!-- Event Reminders -->
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switch_event_reminders"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            android:text="リマインダー"
+            android:textSize="16sp" />
+
+        <!-- Auto Sync -->
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switch_auto_sync"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="24dp"
+            android:text="自動同期"
+            android:textSize="16sp" />
+
+        <!-- Week Start -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:text="週の開始日"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <androidx.appcompat.widget.AppCompatSpinner
+            android:id="@+id/spinner_week_start"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="24dp" />
+
+        <!-- Default Event Duration -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="デフォルトイベント時間"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/text_default_event_duration"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="60分"
+            android:textSize="14sp" />
+
+        <com.google.android.material.slider.Slider
+            android:id="@+id/slider_default_event_duration"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="24dp"
+            android:valueFrom="15"
+            android:valueTo="240"
+            android:value="60"
+            android:stepSize="15" />
+
+        <!-- Smart Scheduling -->
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switch_smart_scheduling"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            android:text="スマートスケジューリング"
+            android:textSize="16sp" />
+
+        <!-- Integration with Study Sessions -->
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switch_study_integration"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="学習セッション連携"
+            android:textSize="16sp" />
+
+    </LinearLayout>
+
+</androidx.core.widget.NestedScrollView>

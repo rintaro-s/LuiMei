@@ -1,0 +1,238 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:background="@color/material_dynamic_neutral99">
+
+    <!-- ヘッダー -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginBottom="24dp">
+
+        <Button
+            android:id="@+id/btnBack"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp"
+            android:text="← 戻る"
+            android:textSize="14sp"
+            style="@style/Widget.Material3.Button.OutlinedButton" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="議事録メモ"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:textColor="@color/material_dynamic_neutral10"
+            android:gravity="center" />
+
+        <View
+            android:layout_width="80dp"
+            android:layout_height="48dp" />
+
+    </LinearLayout>
+
+    <!-- 録音コントロール -->
+    <com.google.android.material.card.MaterialCardView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="16dp"
+        app:cardCornerRadius="12dp"
+        app:cardElevation="4dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="音声録音"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:textColor="@color/material_dynamic_neutral10"
+                android:layout_marginBottom="12dp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center"
+                android:layout_marginBottom="12dp">
+
+                <Button
+                    android:id="@+id/btnStartRecording"
+                    android:layout_width="0dp"
+                    android:layout_height="56dp"
+                    android:layout_weight="1"
+                    android:text="録音開始"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:layout_marginEnd="8dp"
+                    style="@style/Widget.Material3.Button" />
+
+                <Button
+                    android:id="@+id/btnProcessAudio"
+                    android:layout_width="0dp"
+                    android:layout_height="56dp"
+                    android:layout_weight="1"
+                    android:text="音声処理"
+                    android:textSize="16sp"
+                    android:enabled="false"
+                    android:layout_marginStart="8dp"
+                    style="@style/Widget.Material3.Button.OutlinedButton" />
+
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/tvStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="録音待機中..."
+                android:textSize="14sp"
+                android:textColor="@color/material_dynamic_neutral50"
+                android:gravity="center" />
+
+        </LinearLayout>
+
+    </com.google.android.material.card.MaterialCardView>
+
+    <!-- スクロール可能なコンテンツエリア -->
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <!-- 文字起こし結果 -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                app:cardCornerRadius="12dp"
+                app:cardElevation="4dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="文字起こし結果"
+                        android:textSize="18sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/material_dynamic_neutral10"
+                        android:layout_marginBottom="12dp" />
+
+                    <TextView
+                        android:id="@+id/tvTranscription"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="音声を録音して処理ボタンを押すと、ここに文字起こし結果が表示されます。"
+                        android:textSize="14sp"
+                        android:textColor="@color/material_dynamic_neutral30"
+                        android:lineSpacingMultiplier="1.2"
+                        android:minHeight="100dp"
+                        android:padding="12dp"
+                        android:background="@color/material_dynamic_neutral95" />
+
+                </LinearLayout>
+
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- 会議要約 -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                app:cardCornerRadius="12dp"
+                app:cardElevation="4dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="AI要約結果"
+                        android:textSize="18sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/material_dynamic_neutral10"
+                        android:layout_marginBottom="12dp" />
+
+                    <TextView
+                        android:id="@+id/tvSummary"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="文字起こしが完了すると、LMStudioのLLMが自動的に会議内容を要約します。\n\n【議題・目的】\n【参加者・発言者】\n【主な議論内容】\n【決定事項】\n【アクションアイテム】\n【その他・備考】"
+                        android:textSize="14sp"
+                        android:textColor="@color/material_dynamic_neutral30"
+                        android:lineSpacingMultiplier="1.2"
+                        android:minHeight="150dp"
+                        android:padding="12dp"
+                        android:background="@color/material_dynamic_neutral95" />
+
+                </LinearLayout>
+
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- 使用方法の説明 -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardCornerRadius="12dp"
+                app:cardElevation="2dp"
+                app:cardBackgroundColor="@color/material_dynamic_primary90">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="💡 使用方法"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/material_dynamic_primary10"
+                        android:layout_marginBottom="8dp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="1. 「録音開始」ボタンで会議の録音を開始\n2. 会議終了後「録音停止」ボタンで録音を終了\n3. 「音声処理」ボタンでローカルSTT + LLM要約を実行\n4. 結果は自動的に保存されます"
+                        android:textSize="13sp"
+                        android:textColor="@color/material_dynamic_primary20"
+                        android:lineSpacingMultiplier="1.3" />
+
+                </LinearLayout>
+
+            </com.google.android.material.card.MaterialCardView>
+
+        </LinearLayout>
+
+    </ScrollView>
+
+</LinearLayout>

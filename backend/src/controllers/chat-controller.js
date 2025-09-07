@@ -3,8 +3,10 @@
  * client.py互換チャット処理API
  */
 
+const lifeAssistantController = require('./life-assistant-controller');
+
 // Helper function to generate mock responses
-function generateMockResponse(text, roleSheet = {}, history = []) {
+function generateMockResponse(text, roleSheet = {}, history = [], lifeData = null) {
   const responses = [
     'おはようございます！今日も素晴らしい一日になりそうですね。',
     'それは興味深い話ですね。もう少し詳しく教えてください。',
@@ -27,6 +29,43 @@ function generateMockResponse(text, roleSheet = {}, history = []) {
       text: '今日の予定について教えてください。時間管理のお手伝いをさせていただきます！',
       emotion: 'helpful',
       confidence: 0.88
+    };
+  }
+
+  // Life assistant related queries
+  if (text.includes('買い物') || text.includes('ショッピング')) {
+    const itemCount = lifeData?.shopping?.items?.length || 5;
+    return {
+      text: `買い物リストには現在${itemCount}件のアイテムがありますね。追加したいものはありますか？`,
+      emotion: 'helpful',
+      confidence: 0.90
+    };
+  }
+
+  if (text.includes('料理') || text.includes('レシピ')) {
+    const suggestions = lifeData?.cooking?.suggestions?.length || 3;
+    return {
+      text: `今日の料理ですね！${suggestions}つのおすすめレシピをご用意しています。何か特別なご希望はありますか？`,
+      emotion: 'enthusiastic',
+      confidence: 0.89
+    };
+  }
+
+  if (text.includes('掃除') || text.includes('片付け')) {
+    const tasks = lifeData?.cleaning?.tasks?.length || 4;
+    return {
+      text: `掃除スケジュールには${tasks}つのタスクがありますね。今日はどちらから始めましょうか？`,
+      emotion: 'organized',
+      confidence: 0.87
+    };
+  }
+
+  if (text.includes('家計') || text.includes('お金') || text.includes('支出')) {
+    const total = lifeData?.expenses?.monthlyTotal || 50000;
+    return {
+      text: `今月の支出は¥${total.toLocaleString()}ですね。家計管理でお手伝いできることはありますか？`,
+      emotion: 'supportive',
+      confidence: 0.86
     };
   }
 
@@ -60,8 +99,26 @@ const processChat = async (req, res) => {
       });
     }
 
-    // Generate mock response
-    const mockResponse = generateMockResponse(text, role_sheet, history);
+    // Load life assistant data for context
+    let lifeData = null;
+    try {
+      const mockShoppingList = await lifeAssistantController.getShoppingListData();
+      const mockCookingSuggestions = await lifeAssistantController.getCookingSuggestionsData();
+      const mockCleaningSchedule = await lifeAssistantController.getCleaningScheduleData();
+      const mockExpenseTracking = await lifeAssistantController.getExpenseTrackingData();
+      
+      lifeData = {
+        shopping: mockShoppingList,
+        cooking: mockCookingSuggestions,
+        cleaning: mockCleaningSchedule,
+        expenses: mockExpenseTracking
+      };
+    } catch (error) {
+      console.warn('Could not load life assistant data:', error.message);
+    }
+
+    // Generate mock response with life data context
+    const mockResponse = generateMockResponse(text, role_sheet, history, lifeData);
 
     // Create response data compatible with client.py
     const responseData = {

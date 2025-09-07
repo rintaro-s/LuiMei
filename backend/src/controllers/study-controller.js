@@ -1,5 +1,7 @@
 const logger = require('../../utils/logger');
 const ExternalAPIHelper = require('../../utils/external-api');
+const StudySession = require('../models/StudySession');
+const User = require('../models/User');
 
 /**
  * 勉強アシスタントコントローラー
@@ -8,11 +10,35 @@ const ExternalAPIHelper = require('../../utils/external-api');
 class StudyController {
   
   /**
+   * ゲストユーザーの存在確認・作成
+   */
+  async ensureGuestUser(userId) {
+    try {
+      let user = await User.findOne({ userId });
+      if (!user) {
+        user = new User({
+          userId,
+          email: `${userId}@guest.local`,
+          displayName: 'ゲストユーザー',
+          isGuest: true,
+          provider: 'guest'
+        });
+        await user.save();
+        console.log('Guest user created:', userId);
+      }
+      return user;
+    } catch (error) {
+      console.error('Error ensuring guest user:', error);
+      throw error;
+    }
+  }
+  
+  /**
    * カメラでノート・資料を撮影・分析
    */
   async analyzeStudyMaterial(req, res) {
     try {
-      const userId = req.user.userId;
+      const userId = req.user?.userId || 'dev_user';
       const { imageData, analysisType = 'general', subject } = req.body;
       
       // Base64画像データをバッファに変換
@@ -72,7 +98,7 @@ class StudyController {
    */
   async recordStudyProgress(req, res) {
     try {
-      const userId = req.user.userId;
+      const userId = req.user?.userId || 'dev_user';
       const { 
         subject, 
         topic, 
@@ -130,44 +156,56 @@ class StudyController {
    */
   async startStudySession(req, res) {
     try {
-      const userId = req.user.userId;
-      const { subject, goal, estimatedDuration } = req.body;
+      const userId = req.user?.userId || 'guest_user';
+      const { subject, title, description, targetDuration, goals } = req.body;
       
-      const sessionId = `session_${Date.now()}`;
-      const session = {
-        id: sessionId,
-        subject,
-        goal,
-        estimatedDuration: estimatedDuration || 60, // minutes
-        startTime: new Date().toISOString(),
-        status: 'active',
-        breaks: [],
-        interruptions: []
-      };
+      // ゲストユーザーの場合、データベースにユーザーを作成
+      await this.ensureGuestUser(userId);
       
-      const User = require('../models/User');
-      await User.updateOne(
-        { userId },
-        {
-          $set: {
-            'preferences.activeStudySession': session
+      // 既存のアクティブなセッションをチェック
+      const existingSession = await StudySession.getActiveSession(userId);
+      if (existingSession) {
+        return res.status(400).json({
+          success: false,
+          error: 'ActiveSessionExists',
+          message: '既にアクティブな学習セッションがあります',
+          existingSession: {
+            sessionId: existingSession.sessionId,
+            title: existingSession.title,
+            subject: existingSession.subject,
+            startTime: existingSession.startTime
           }
-        },
-        { upsert: true }
-      );
+        });
+      }
+      
+      const sessionId = `session_${userId}_${Date.now()}`;
+      const session = new StudySession({
+        userId,
+        sessionId,
+        title: title || `${subject}の学習`,
+        subject,
+        description,
+        targetDuration: targetDuration || 60, // minutes
+        status: 'active',
+        goals: goals ? goals.map(g => ({ description: g })) : []
+      });
+      
+      const savedSession = await session.save();
+      
+      logger.info('Study session started:', { userId, sessionId });
       
       // WebSocket経由でセッション開始通知
       const io = req.app.get('io');
       if (io) {
         io.to(`user_${userId}`).emit('study_session_started', {
-          session,
+          session: savedSession,
           timestamp: new Date().toISOString()
         });
       }
       
       res.json({
         success: true,
-        session,
+        session: savedSession,
         message: `${subject}の学習セッションを開始しました`
       });
     } catch (error) {
@@ -175,7 +213,8 @@ class StudyController {
       res.status(500).json({
         success: false,
         error: 'SessionStartError',
-        message: 'Failed to start study session'
+        message: 'Failed to start study session',
+        details: error.message
       });
     }
   }
@@ -185,14 +224,20 @@ class StudyController {
    */
   async endStudySession(req, res) {
     try {
-      const userId = req.user.userId;
-      const { accomplishments, reflection, nextSteps } = req.body;
+      const userId = req.user?.userId || 'guest_user';
+      const { sessionId, accomplishments, reflection, nextSteps, feedback } = req.body;
       
-      const User = require('../models/User');
-      const user = await User.findOne({ userId });
-      const activeSession = user?.preferences?.activeStudySession;
+      let session;
       
-      if (!activeSession) {
+      if (sessionId) {
+        // 特定のセッションを終了
+        session = await StudySession.findOne({ sessionId, userId, status: 'active' });
+      } else {
+        // アクティブなセッションを終了
+        session = await StudySession.getActiveSession(userId);
+      }
+      
+      if (!session) {
         return res.status(404).json({
           success: false,
           error: 'NoActiveSession',
@@ -200,39 +245,57 @@ class StudyController {
         });
       }
       
-      // セッション完了記録
-      const completedSession = {
-        ...activeSession,
-        endTime: new Date().toISOString(),
-        actualDuration: this.calculateSessionDuration(activeSession.startTime),
-        accomplishments: accomplishments || [],
-        reflection: reflection || '',
-        nextSteps: nextSteps || [],
-        status: 'completed'
-      };
+      // ゴールの完了状況を更新
+      if (accomplishments && accomplishments.length > 0) {
+        accomplishments.forEach(accomplishment => {
+          const goal = session.goals.find(g => g.description === accomplishment);
+          if (goal) {
+            goal.isCompleted = true;
+            goal.completedAt = new Date();
+          }
+        });
+      }
       
-      await User.updateOne(
-        { userId },
-        {
-          $unset: { 'preferences.activeStudySession': '' },
-          $push: { 'preferences.completedStudySessions': completedSession }
-        }
-      );
+      // セッション完了処理
+      await session.completeSession(feedback);
+      
+      // 追加のメタデータを保存
+      if (reflection) {
+        session.notes.push({
+          content: reflection,
+          type: 'reflection'
+        });
+      }
+      
+      if (nextSteps && nextSteps.length > 0) {
+        session.notes.push({
+          content: `次のステップ: ${nextSteps.join(', ')}`,
+          type: 'important'
+        });
+      }
+      
+      await session.save();
+      
+      logger.info('Study session completed:', { 
+        userId, 
+        sessionId: session.sessionId, 
+        duration: session.duration 
+      });
       
       // 成果通知
       const io = req.app.get('io');
       if (io) {
         io.to(`user_${userId}`).emit('study_session_completed', {
-          session: completedSession,
-          summary: this.generateSessionSummary(completedSession),
+          session: session,
+          summary: this.generateSessionSummary(session),
           timestamp: new Date().toISOString()
         });
       }
       
       res.json({
         success: true,
-        session: completedSession,
-        summary: this.generateSessionSummary(completedSession),
+        session: session,
+        summary: this.generateSessionSummary(session),
         message: '学習セッションが完了しました'
       });
     } catch (error) {
@@ -240,8 +303,35 @@ class StudyController {
       res.status(500).json({
         success: false,
         error: 'SessionEndError',
-        message: 'Failed to end study session'
+        message: 'Failed to end study session',
+        details: error.message
       });
+    }
+  }
+
+  /**
+   * ゲストユーザーの確保（存在しない場合は作成）
+   */
+  async ensureGuestUser(userId) {
+    try {
+      let user = await User.findOne({ userId });
+      
+      if (!user) {
+        user = new User({
+          userId: userId,
+          email: `${userId}@guest.local`,
+          displayName: 'ゲストユーザー',
+          isGuest: true,
+          provider: 'guest'
+        });
+        await user.save();
+        logger.info('Guest user created:', userId);
+      }
+      
+      return user;
+    } catch (error) {
+      logger.error('Error ensuring guest user:', error);
+      throw error;
     }
   }
   
@@ -250,7 +340,7 @@ class StudyController {
    */
   async getStudyStats(req, res) {
     try {
-      const userId = req.user.userId;
+      const userId = req.user?.userId || 'dev_user';
       const { period = 'week' } = req.query;
       
       const User = require('../models/User');
@@ -288,7 +378,7 @@ class StudyController {
    */
   async getStudyAdvice(req, res) {
     try {
-      const userId = req.user.userId;
+      const userId = req.user?.userId || 'dev_user';
       const { subject, currentTopic, difficulty } = req.query;
       
       const User = require('../models/User');
@@ -720,6 +810,63 @@ class StudyController {
     
     return advice;
   }
+
+  /**
+   * 学習セッション一覧取得
+   */
+  async getStudySessions(req, res) {
+    try {
+      const userId = req.user?.userId || 'dev_user';
+      
+      // ゲストユーザー確保
+      await this.ensureGuestUser(userId);
+      
+      // データベースから学習セッションを取得
+      const sessions = await StudySession.find({ userId })
+        .sort({ startTime: -1 })
+        .limit(20);
+      
+      // ユーザードキュメントからも取得（互換性のため）
+      const user = await User.findOne({ userId });
+      const userSessions = user?.studySessions || [];
+      
+      // 両方のソースをマージ
+      const allSessions = [
+        ...sessions.map(s => s.toObject()),
+        ...userSessions
+      ];
+      
+      // 重複除去とソート
+      const uniqueSessions = allSessions.reduce((acc, session) => {
+        const id = session.sessionId || session.id;
+        if (!acc.find(s => (s.sessionId || s.id) === id)) {
+          acc.push(session);
+        }
+        return acc;
+      }, []).sort((a, b) => {
+        const aTime = new Date(a.startTime || a.createdAt);
+        const bTime = new Date(b.startTime || b.createdAt);
+        return bTime - aTime;
+      });
+
+      res.json({
+        success: true,
+        sessions: uniqueSessions,
+        data: {
+          sessions: uniqueSessions,
+          totalSessions: uniqueSessions.length,
+          activeSessions: uniqueSessions.filter(s => s.status === 'active').length,
+          completedSessions: uniqueSessions.filter(s => s.status === 'completed').length
+        }
+      });
+    } catch (error) {
+      logger.error('Failed to get study sessions:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to retrieve study sessions'
+      });
+    }
+  }
 }
 
-module.exports = new StudyController();
+module.exports = StudyController;

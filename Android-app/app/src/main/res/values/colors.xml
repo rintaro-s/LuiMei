@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Base colors -->
+    <color name="primary">#6366F1</color>
+    <color name="primary_color">#6366F1</color>
+    <color name="primary_light">#818CF8</color>
+    <color name="primary_variant">#4F46E5</color>
+    <color name="secondary">#EC4899</color>
+    <color name="secondary_variant">#DB2777</color>
+    <color name="tertiary">#8B5CF6</color>
+    
+    <!-- Background colors -->
+    <color name="background">#FFFFFF</color>
+    <color name="surface">#FFFFFF</color>
+    <color name="surface_variant">#F1F5F9</color>
+    <color name="chat_background">#F8FAFC</color>
+    
+    <!-- Outline colors -->
+    <color name="outline">#E2E8F0</color>
+    <color name="outline_variant">#CBD5E1</color>
+    
+    <!-- Text colors -->
+    <color name="on_primary">#FFFFFF</color>
+    <color name="on_secondary">#FFFFFF</color>
+    <color name="on_background">#1E293B</color>
+    <color name="on_surface">#1E293B</color>
+    <color name="on_surface_variant">#64748B</color>
+    <color name="text_primary">#1E293B</color>
+    <color name="text_secondary">#64748B</color>
+    
+    <!-- Additional UI colors -->
+    <color name="colorBackground">#F8FAFC</color>
+    <color name="background_color">#F8FAFC</color>
+    <color name="accent_color">#10B981</color>
+    <color name="secondary_color">#8B5CF6</color>
+    <color name="success_color">#10B981</color>
+    <color name="warning_color">#F59E0B</color>
+    <color name="error_color">#EF4444</color>
+    
+    <!-- Additional colors for ChatFragment -->
+    <color name="colorPrimary">#6366F1</color>
+    <color name="colorSecondary">#8B5CF6</color>
+    <color name="colorAccent">#10B981</color>
+    
+    <!-- Message bubble colors -->
+    <color name="user_message_background">#6366F1</color>
+    <color name="user_message_text">#FFFFFF</color>
+    <color name="assistant_message_background">#FFFFFF</color>
+    <color name="assistant_message_text">#1E293B</color>
+    <color name="system_message_background">#F1F5F9</color>
+    <color name="system_message_text">#64748B</color>
+    <color name="message_time_text">#94A3B8</color>
+    
+    <!-- Avatar colors -->
+    <color name="assistant_avatar_background">#6366F1</color>
+    <color name="user_avatar_background">#EC4899</color>
+    
+    <!-- Status colors -->
+    <color name="success">#10B981</color>
+    <color name="warning">#F59E0B</color>
+    <color name="error">#EF4444</color>
+    <color name="info">#3B82F6</color>
+    
+    <!-- Input background -->
+    <color name="input_background">#F1F5F9</color>
+    <color name="input_border">#E2E8F0</color>
+    
+    <!-- Common Material colors -->
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="transparent">#00000000</color>
+    
+    <!-- Dark theme colors -->
+    <color name="background_dark">#0F172A</color>
+    <color name="surface_dark">#1E293B</color>
+    <color name="chat_background_dark">#0F172A</color>
+    <color name="on_background_dark">#F8FAFC</color>
+    <color name="on_surface_dark">#F8FAFC</color>
+    <color name="assistant_message_background_dark">#1E293B</color>
+    <color name="assistant_message_text_dark">#F8FAFC</color>
+    <color name="system_message_background_dark">#334155</color>
+    <color name="system_message_text_dark">#CBD5E1</color>
+    <color name="input_background_dark">#334155</color>
+    <color name="input_border_dark">#475569</color>
+    
+    <!-- Device Assistant colors -->
+    <color name="assistant_background">#1E293B</color>
+    <color name="primary_text">#F8FAFC</color>
+    <color name="user_text">#6366F1</color>
+    <color name="assistant_text">#10B981</color>
+</resources>

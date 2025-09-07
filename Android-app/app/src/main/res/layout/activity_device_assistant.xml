@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:background="#CC000000"
+    android:padding="32dp"
+    android:clickable="true"
+    android:focusable="true">
+
+    <!-- Close Button -->
+    <Button
+        android:id="@+id/btn_close"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="end"
+        android:text="✕"
+        android:textSize="18sp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:layout_marginBottom="16dp" />
+
+    <!-- Assistant Icon -->
+    <ImageView
+        android:id="@+id/iv_assistant_icon"
+        android:layout_width="120dp"
+        android:layout_height="120dp"
+        android:src="@drawable/ic_assistant"
+        android:layout_marginBottom="24dp"
+        android:contentDescription="AI アシスタント" />
+
+    <!-- Status Text -->
+    <TextView
+        android:id="@+id/tv_status"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="音声を話してください..."
+        android:textSize="18sp"
+        android:textColor="@color/primary_text"
+        android:layout_marginBottom="16dp"
+        android:gravity="center" />
+
+    <!-- User Input Display -->
+    <TextView
+        android:id="@+id/tv_user_input"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text=""
+        android:textSize="16sp"
+        android:textColor="@color/user_text"
+        android:background="@drawable/chat_bubble_user"
+        android:padding="12dp"
+        android:layout_marginBottom="16dp"
+        android:minHeight="48dp"
+        android:gravity="center_vertical"
+        android:visibility="gone" />
+
+    <!-- AI Response Display -->
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginBottom="24dp">
+
+        <TextView
+            android:id="@+id/tv_response"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text=""
+            android:textSize="16sp"
+            android:textColor="@color/assistant_text"
+            android:background="@drawable/chat_bubble_assistant"
+            android:padding="16dp"
+            android:minHeight="100dp"
+            android:gravity="top"
+            android:visibility="gone" />
+
+    </ScrollView>
+
+    <!-- Controls -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center">
+
+        <Button
+            android:id="@+id/btn_microphone"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="話す"
+            android:textSize="18sp"
+            android:padding="16dp"
+            android:layout_marginEnd="8dp"
+            android:background="@drawable/button_primary" />
+
+        <Button
+            android:id="@+id/btn_main_app"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="音声開始"
+            android:textSize="16sp"
+            android:padding="16dp"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/button_secondary" />
+
+    </LinearLayout>
+
+</LinearLayout>

@@ -12,12 +12,18 @@ const deviceController = require('../controllers/device-controller');
 const userController = require('../controllers/user-controller');
 const statusController = require('../controllers/status-controller');
 const communicationController = require('../controllers/communication-controller');
-const calendarController = require('../controllers/calendar-controller');
 const wakeWordController = require('../controllers/wake-word-controller');
 const sleepController = require('../controllers/sleep-controller');
-const studyController = require('../controllers/study-controller');
+const StudyController = require('../controllers/study-controller');
+const LifeAssistantController = require('../controllers/life-assistant-controller');
 const ttsController = require('../controllers/tts-controller');
+const settingsController = require('../controllers/settings-controller');
 const { requireAuth } = require('../controllers/auth-controller');
+const devAuthMiddleware = require('../middleware/dev-auth');
+
+// インスタンス作成
+const studyController = new StudyController();
+const lifeAssistantController = new LifeAssistantController();
 
 // Public monitoring endpoints (no auth)
 router.get('/status', (req, res, next) => {
@@ -44,29 +50,38 @@ router.get('/health', (req, res) => {
 });
 
 // Apply authentication middleware to remaining v1 routes
-router.use(requireAuth);
+// Skip auth in development environment
+if (process.env.NODE_ENV !== 'development') {
+  router.use(requireAuth);
+} else {
+  console.log('🔓 Authentication disabled in development mode');
+  router.use(devAuthMiddleware); // 開発環境では模擬ユーザーを設定
+}
 
 // CLIENT COMPATIBLE ENDPOINTS
 
 // Communication API - main message endpoint
 router.post('/communication/message', communicationController.sendMessage);
 router.post('/communication/voice/input', communicationController.handleVoiceInput);
+router.get('/communication/voice/output/:messageId', communicationController.getVoiceOutput);
 router.post('/communication/command/device', communicationController.executeDeviceCommand);
+router.get('/communication/command/:commandId/status', communicationController.getCommandStatus);
+
+// Communication session & context
+router.post('/communication/session/start', communicationController.startSession);
+router.post('/communication/session/end', communicationController.endSession);
+router.get('/communication/session/:sessionId/status', communicationController.getSessionStatus);
+router.get('/communication/context/:userId', communicationController.getContext);
+router.post('/communication/context/update', communicationController.updateContext);
 
 // Vision API - image analysis
 router.post('/vision/analyze', visionApiController.analyzeImage);
 router.post('/communication/vision/analyze', communicationController.analyzeImage);
 
 // TTS - Text to Speech
-router.post('/communication/tts/speak', ttsController.synthesizeSpeech);
+router.post('/communication/tts/speak', (req, res) => ttsController.synthesizeSpeech(req, res));
 router.post('/communication/tts/stream', ttsController.streamSpeech);
 router.get('/voices', ttsController.getAvailableVoices);
-
-// Calendar API - Google Calendar integration
-router.get('/calendar/today', calendarController.getTodayEvents);
-router.get('/calendar/week', calendarController.getWeeklyEvents);
-router.post('/calendar/events', calendarController.createEvent);
-router.get('/calendar/progress', calendarController.checkProgress);
 
 // Wake Word API
 router.get('/wake-word/settings', wakeWordController.getWakeWordSettings);
@@ -82,12 +97,29 @@ router.get('/sleep/data', sleepController.getSleepData);
 router.post('/sleep/oversleep', sleepController.handleOversleep);
 
 // Study Assistant API
-router.post('/study/analyze', studyController.analyzeStudyMaterial);
-router.post('/study/progress', studyController.recordStudyProgress);
-router.post('/study/sessions/start', studyController.startStudySession);
-router.post('/study/sessions/end', studyController.endStudySession);
-router.get('/study/stats', studyController.getStudyStats);
-router.get('/study/advice', studyController.getStudyAdvice);
+router.post('/study/analyze', (req, res) => studyController.analyzeStudyMaterial(req, res));
+router.post('/study/progress', (req, res) => studyController.recordStudyProgress(req, res));
+router.get('/study/sessions', (req, res) => studyController.getStudySessions(req, res));
+router.post('/study/sessions/start', (req, res) => studyController.startStudySession(req, res));
+router.post('/study/sessions/end', (req, res) => studyController.endStudySession(req, res));
+router.get('/study/stats', (req, res) => studyController.getStudyStats(req, res));
+router.get('/study/advice', (req, res) => studyController.getStudyAdvice(req, res));
+
+// Life Assistant API - 生活の手助け機能
+router.get('/life/shopping', (req, res) => lifeAssistantController.getShoppingList(req, res));
+router.post('/life/shopping', (req, res) => lifeAssistantController.addShoppingItem(req, res));
+router.get('/life/cooking', (req, res) => lifeAssistantController.getCookingSuggestions(req, res));
+router.get('/life/cleaning', (req, res) => lifeAssistantController.getCleaningSchedule(req, res));
+router.get('/life/expenses', (req, res) => lifeAssistantController.getExpenseTracking(req, res));
+router.get('/life/tips', (req, res) => lifeAssistantController.getLifeTips(req, res));
+
+// AI Powered Convenience Features
+router.post('/life/smart-suggestions', (req, res) => lifeAssistantController.getSmartSuggestions(req, res));
+
+// Expense tracking endpoints (家計簿機能)
+router.get('/expenses/:userId', (req, res) => lifeAssistantController.getExpenses(req, res));
+router.post('/expenses', (req, res) => lifeAssistantController.addExpense(req, res));
+router.delete('/expenses/:id', (req, res) => lifeAssistantController.deleteExpense(req, res));
 
 // Device list endpoint
 router.get('/devices/list', deviceController.listDevices);
@@ -149,6 +181,13 @@ router.get('/stt/async/:jobId', assistantExt.getSttJob);
 router.get('/users/:id/profile', userController.getProfile);
 router.get('/voices', userController.listVoices);
 
+// Settings management
+router.get('/settings', devAuthMiddleware, settingsController.getAllSettings);
+router.post('/settings/update', devAuthMiddleware, settingsController.updateSettings);
+router.post('/settings/reset', devAuthMiddleware, settingsController.resetSettings);
+router.get('/settings/export', devAuthMiddleware, settingsController.exportSettings);
+router.post('/settings/import', devAuthMiddleware, settingsController.importSettings);
+
 // Status
 router.get('/status', statusController.getStatus);
 
@@ -164,7 +203,8 @@ router.get('/health', (req, res) => {
       'context', 
       'memory',
       'devices',
-      'vision'
+      'vision',
+      'settings'
     ]
   });
 });

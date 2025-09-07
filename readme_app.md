@@ -541,10 +541,11 @@ API の具体的なエンドポイントやレスポンスは本文の「API設�
   - 説明: リフレッシュトークン無効化、サーバー側セッション破棄
   - 認証: Bearer required
 
-- GET /api/auth/profile
+-- GET /api/auth/profile
   - 説明: 現在認証中のユーザー情報
   - 認証: Bearer required
-  - Response: { success: true, user: { userId, email, displayName, preferences, devices, ... } }
+  - Response: { success: true, data: { user: { userId, email, displayName, ... } } }
+  - 備考: userId が未発行の場合、クライアントは email を論理的なユーザーIDとしてフォールバック利用します（互換運用）。
 
 2) ユーザー API (/api/users)
 - GET /api/users/:userId
@@ -1168,7 +1169,7 @@ class StudyAssistantFragment : Fragment() {
 
 #### 2. API通信仕様
 
-**BASE URL:** `http://localhost:3000` (開発時)
+**BASE URL:** 開発時は `http://localhost:3000`。本リポ内の Android 実装は `https://b2555199e39b.ngrok-free.app` を BuildConfig 経由で使用。
 
 **認証ヘッダー:**
 ```javascript
@@ -1375,6 +1376,7 @@ Body (client.py 互換の例):
 2) Socket.IO（ストリーミング／逐次応答）
 
 - クライアントは JWT を `auth.accessToken` または `query.token` に渡して接続します。
+  - ユーザー識別は `userId ?: email` のフォールバックで安定化しています。Socket の `join_user_room` でも同様に適用。
 - 接続後、`voice_stream_start` / `voice_chunk` / `voice_stream_end` などを送信します。
 - サーバーは `partial_text`, `final_text`, `tts_audio_chunk` などで逐次配信します。
 

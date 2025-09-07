@@ -157,6 +157,15 @@ server.listen(PORT, () => {
   console.log(`🚀 LumiMei OS Server running on port ${PORT}`);
   console.log(`📚 Health check: http://localhost:${PORT}/health`);
   console.log(`🔌 Socket.IO ready for client connections`);
+  // VOSK model check
+  try {
+    const modelPath = process.env.VOSK_MODEL_PATH || require('path').resolve(process.cwd(), 'vosk-model-ja-0.22');
+    if (!require('fs').existsSync(modelPath)) {
+      console.warn('⚠️  VOSK model not found at', modelPath, '\n   Please download and place the model in the project root or set VOSK_MODEL_PATH in .env');
+    } else {
+      console.log('✅ VOSK model found at', modelPath);
+    }
+  } catch (e) { /* ignore */ }
 });
 
 module.exports = app;

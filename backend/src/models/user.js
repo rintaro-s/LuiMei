@@ -90,8 +90,8 @@ const userSchema = new mongoose.Schema({
   refreshToken: String,
   provider: {
     type: String,
-    enum: ['google', 'local'],
-    default: 'google'
+    enum: ['google', 'local', 'guest'],
+    default: 'guest'
   },
   
   // Personality and preferences
@@ -212,7 +212,44 @@ const userSchema = new mongoose.Schema({
     referralCode: String,
     tags: [String],
     notes: String
-  }
+  },
+
+  // Life Assistant Data
+  shoppingList: [{
+    id: { type: String, default: () => `item_${Date.now()}_${Math.random().toString(36).substr(2, 9)}` },
+    name: { type: String, required: true },
+    category: { type: String, default: '未分類' },
+    priority: { type: String, enum: ['low', 'medium', 'high'], default: 'medium' },
+    quantity: { type: Number, default: 1 },
+    unit: { type: String, default: '個' },
+    completed: { type: Boolean, default: false },
+    addedAt: { type: Date, default: Date.now },
+    completedAt: Date
+  }],
+
+  cookingHistory: [{
+    id: { type: String, default: () => `recipe_${Date.now()}_${Math.random().toString(36).substr(2, 9)}` },
+    recipeName: String,
+    ingredients: [String],
+    cookingTime: Number, // minutes
+    difficulty: { type: String, enum: ['easy', 'medium', 'hard'] },
+    rating: { type: Number, min: 1, max: 5 },
+    notes: String,
+    cookedAt: { type: Date, default: Date.now }
+  }],
+
+  studySessions: [{
+    sessionId: { type: String, default: () => `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}` },
+    subject: String,
+    title: String,
+    startTime: Date,
+    endTime: Date,
+    duration: Number, // minutes
+    status: { type: String, enum: ['active', 'paused', 'completed', 'cancelled'], default: 'active' },
+    goals: [String],
+    achievements: [String],
+    notes: String
+  }]
 }, {
   timestamps: true,
   toJSON: { virtuals: true },

@@ -1,0 +1,180 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:background="@drawable/overlay_background">
+
+    <LinearLayout
+        android:id="@+id/overlay_content"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="12dp"
+        android:gravity="center">
+
+        <!-- 会話エリア -->
+        <androidx.cardview.widget.CardView
+            android:id="@+id/chat_card"
+            android:layout_width="350dp"
+            android:layout_height="400dp"
+            android:layout_marginBottom="12dp"
+            android:visibility="gone"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="4dp"
+            app:cardBackgroundColor="@android:color/white">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <!-- チャット履歴 -->
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/rv_overlay_chat"
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:layout_marginBottom="12dp"
+                    android:scrollbars="vertical" />
+
+                <!-- 入力エリア -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <EditText
+                        android:id="@+id/et_overlay_input"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:hint="メッセージを入力..."
+                        android:background="@drawable/edittext_background"
+                        android:padding="12dp"
+                        android:maxLines="3"
+                        android:imeOptions="actionSend"
+                        android:inputType="textMultiLine|textCapSentences" />
+
+                    <ImageButton
+                        android:id="@+id/btn_overlay_send"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:layout_marginStart="8dp"
+                        android:background="@drawable/circle_button_background_small"
+                        android:src="@drawable/ic_send"
+                        android:scaleType="centerInside"
+                        android:contentDescription="送信" />
+
+                </LinearLayout>
+
+            </LinearLayout>
+
+        </androidx.cardview.widget.CardView>
+
+        <!-- アシスタント応答表示エリア（簡易） -->
+        <androidx.cardview.widget.CardView
+            android:id="@+id/response_card"
+            android:layout_width="300dp"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:visibility="gone"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="4dp"
+            app:cardBackgroundColor="@android:color/white">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:id="@+id/text_response"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="アシスタントからの応答がここに表示されます"
+                    android:textSize="16sp"
+                    android:textColor="@android:color/black"
+                    android:lineSpacingExtra="4dp" />
+
+            </LinearLayout>
+
+        </androidx.cardview.widget.CardView>
+
+        <!-- メインアシスタントボタン -->
+        <ImageButton
+            android:id="@+id/btn_overlay_assistant"
+            android:layout_width="64dp"
+            android:layout_height="64dp"
+            android:layout_margin="4dp"
+            android:background="@drawable/circle_button_background"
+            android:src="@drawable/ic_assistant"
+            android:scaleType="centerInside"
+            android:contentDescription="アシスタント"
+            android:elevation="8dp" />
+
+        <!-- 拡張ボタン群 -->
+        <LinearLayout
+            android:id="@+id/expanded_buttons"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="8dp"
+            android:visibility="gone">
+
+            <!-- 会話モードボタン -->
+            <ImageButton
+                android:id="@+id/btn_overlay_chat"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_margin="4dp"
+                android:background="@drawable/circle_button_background_small"
+                android:src="@drawable/ic_chat"
+                android:scaleType="centerInside"
+                android:contentDescription="会話モード"
+                android:elevation="6dp" />
+
+            <!-- 音声入力ボタン -->
+            <ImageButton
+                android:id="@+id/btn_overlay_voice"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_margin="4dp"
+                android:background="@drawable/circle_button_background_small"
+                android:src="@drawable/ic_mic"
+                android:scaleType="centerInside"
+                android:contentDescription="音声入力"
+                android:elevation="6dp" />
+
+            <!-- 展開ボタン -->
+            <ImageButton
+                android:id="@+id/btn_overlay_expand"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_margin="4dp"
+                android:background="@drawable/circle_button_background_small"
+                android:src="@drawable/ic_expand_more"
+                android:scaleType="centerInside"
+                android:contentDescription="展開"
+                android:elevation="6dp" />
+
+            <!-- 閉じるボタン -->
+            <ImageButton
+                android:id="@+id/btn_overlay_close"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_margin="4dp"
+                android:background="@drawable/circle_button_background_small"
+                android:src="@drawable/ic_close"
+                android:scaleType="centerInside"
+                android:contentDescription="閉じる"
+                android:elevation="6dp" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</FrameLayout>

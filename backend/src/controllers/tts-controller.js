@@ -5,6 +5,8 @@
 
 const ExternalAPIHelper = require('../../utils/external-api');
 const logger = require('../../utils/logger');
+const http = require('http');
+const https = require('https');
 
 /**
  * TTS音声合成コントローラー
@@ -16,7 +18,19 @@ class TTSController {
    */
   async synthesizeSpeech(req, res) {
     try {
-      const { text, voice, format = 'wav', speed = 1.0, pitch = 1.0 } = req.body;
+      const { 
+        text, 
+        voice = 'voicebox', // デフォルトでvoiceboxを使用
+        voiceId = 2, // デフォルトは四国めたん
+        speaker, // voicebox用のスピーカーID
+        format = 'wav', 
+        speed = 1.0, 
+        pitch = 1.0,
+        enableTTS = true 
+      } = req.body;
+      
+      // speakerが指定されている場合はvoiceIdとして使用
+      const actualVoiceId = speaker || voiceId;
       
       if (!text) {
         return res.status(400).json({
@@ -26,35 +40,40 @@ class TTSController {
         });
       }
 
-      // 音声合成処理
-      const audioResult = await this.performTTS(text, voice, { format, speed, pitch });
-      
-      if (audioResult.stream) {
-        // ストリーミング応答
-        res.setHeader('Content-Type', `audio/${format}`);
-        res.setHeader('Transfer-Encoding', 'chunked');
-        audioResult.stream.pipe(res);
-      } else {
-        // 一括応答
-        res.json({
+      // TTS有効性チェック
+      if (!enableTTS) {
+        return res.json({
           success: true,
-          audioData: audioResult.base64,
-          format: audioResult.format,
-          duration: audioResult.duration,
-          voice: audioResult.voice,
-          metadata: {
-            textLength: text.length,
-            processingTime: audioResult.processingTime,
-            timestamp: new Date().toISOString()
-          }
+          message: 'TTS is disabled',
+          audioData: null
         });
       }
+
+      logger.info(`TTS request - Text: "${text.substring(0, 50)}...", Voice ID: ${actualVoiceId}`);
+      
+      // VOICEBOXでの音声合成処理
+      const audioResult = await this.performVoiceboxTTS(text, actualVoiceId, { format, speed, pitch });
+      
+      // 一括応答
+      res.json({
+        success: true,
+        audioData: audioResult.base64,
+        format: audioResult.format,
+        duration: audioResult.duration,
+        voiceId: audioResult.voiceId,
+        voiceName: audioResult.voiceName,
+        metadata: {
+          textLength: text.length,
+          processingTime: audioResult.processingTime,
+          timestamp: new Date().toISOString()
+        }
+      });
     } catch (error) {
       logger.error('TTS synthesis failed:', error);
       res.status(500).json({
         success: false,
         error: 'TTSError',
-        message: 'Failed to synthesize speech'
+        message: 'Failed to synthesize speech: ' + error.message
       });
     }
   }
@@ -440,6 +459,180 @@ class TTSController {
     
     return buffer.toString('base64');
   }
+
+  /**
+   * Voiceboxの可用性をチェック
+   */
+  async checkVoiceboxAvailability() {
+    try {
+      const voiceboxUrl = process.env.VOICEBOX_API_URL || 'http://localhost:50021';
+      logger.info(`Checking VOICEBOX availability at: ${voiceboxUrl}`);
+      
+      const url = new URL(voiceboxUrl);
+      const isHttps = url.protocol === 'https:';
+      const httpModule = isHttps ? https : http;
+      
+      return new Promise((resolve) => {
+        const options = {
+          hostname: url.hostname,
+          port: url.port || (isHttps ? 443 : 80),
+          path: '/version',
+          method: 'GET',
+          timeout: 5000
+        };
+        
+        const req = httpModule.request(options, (res) => {
+          let data = '';
+          res.on('data', chunk => data += chunk);
+          res.on('end', () => {
+            if (res.statusCode === 200) {
+              logger.info(`VOICEBOX is available, version: ${data}`);
+              resolve(true);
+            } else {
+              logger.warn(`VOICEBOX responded with status: ${res.statusCode}`);
+              resolve(false);
+            }
+          });
+        });
+        
+        req.on('error', (error) => {
+          logger.error(`VOICEBOX availability check failed: ${error.message}`);
+          resolve(false);
+        });
+        
+        req.on('timeout', () => {
+          logger.error('VOICEBOX availability check timed out');
+          req.destroy();
+          resolve(false);
+        });
+        
+        req.end();
+      });
+    } catch (error) {
+      logger.error(`VOICEBOX availability check failed: ${error.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * Voicebox TTS音声合成処理
+   */
+  async performVoiceboxTTS(text, voiceId, options) {
+    const startTime = Date.now();
+    
+    // 音声キャラクターマッピング
+    const voiceCharacters = {
+      2: { name: '四国めたん', description: 'はっきりした芯のある声' },
+      3: { name: 'ずんだもん', description: '子供っぽい高めの声' },
+      8: { name: '春日部つむぎ', description: '元気な明るい声' },
+      10: { name: '雨晴はう', description: '優しく可愛い声' },
+      9: { name: '波音リツ', description: '低めのクールな声' },
+      11: { name: '玄野武宏', description: '爽やかな青年の声' },
+      29: { name: 'No.7', description: 'しっかりした凛々しい声' }
+    };
+
+    const voiceInfo = voiceCharacters[voiceId] || voiceCharacters[2];
+    logger.info(`Performing VOICEBOX TTS with voice ID: ${voiceId} (${voiceInfo.name})`);
+
+    // まずVOICEBOXの可用性をチェック
+    const isAvailable = await this.checkVoiceboxAvailability();
+    if (!isAvailable) {
+      throw new Error('VOICEBOX is not available');
+    }
+
+    // Voicebox APIへのリクエスト
+    const voiceboxResponse = await this.callVoiceboxAPI(text, voiceId, options);
+    
+    if (voiceboxResponse.success) {
+      logger.info(`VOICEBOX TTS successful for voice ${voiceInfo.name}`);
+      return {
+        base64: voiceboxResponse.audioData,
+        format: options.format || 'wav',
+        duration: voiceboxResponse.duration || 0,
+        voiceId: voiceId,
+        voiceName: voiceInfo.name,
+        processingTime: Date.now() - startTime
+      };
+    } else {
+      throw new Error(`VOICEBOX TTS failed: ${voiceboxResponse.error}`);
+    }
+  }
+
+  /**
+   * Voicebox APIを呼び出し
+   */
+  async callVoiceboxAPI(text, voiceId, options) {
+    try {
+      const voiceboxUrl = process.env.VOICEBOX_API_URL || 'http://localhost:50021';
+      logger.info(`Calling VOICEBOX API at ${voiceboxUrl} with speaker ${voiceId}`);
+      
+      // Step 1: audio_query でクエリを作成
+      const audioQueryUrl = `${voiceboxUrl}/audio_query?text=${encodeURIComponent(text)}&speaker=${voiceId}`;
+      logger.info(`Making audio_query request to: ${audioQueryUrl}`);
+      
+      const AbortController = globalThis.AbortController;
+      const queryController = new AbortController();
+      const queryTimeoutId = setTimeout(() => queryController.abort(), 10000);
+      
+      const queryResponse = await fetch(audioQueryUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        signal: queryController.signal
+      });
+
+      clearTimeout(queryTimeoutId);
+
+      if (!queryResponse.ok) {
+        throw new Error(`Audio query failed: ${queryResponse.status} ${queryResponse.statusText}`);
+      }
+
+      const audioQuery = await queryResponse.json();
+      logger.info('Audio query successful, proceeding to synthesis');
+
+      // Step 2: synthesis で音声合成
+      const synthesisUrl = `${voiceboxUrl}/synthesis?speaker=${voiceId}`;
+      logger.info(`Making synthesis request to: ${synthesisUrl}`);
+      
+      const synthesisController = new AbortController();
+      const synthesisTimeoutId = setTimeout(() => synthesisController.abort(), 15000);
+      
+      const synthesisResponse = await fetch(synthesisUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(audioQuery),
+        signal: synthesisController.signal
+      });
+
+      clearTimeout(synthesisTimeoutId);
+
+      if (!synthesisResponse.ok) {
+        throw new Error(`Synthesis failed: ${synthesisResponse.status} ${synthesisResponse.statusText}`);
+      }
+
+      const audioBuffer = await synthesisResponse.arrayBuffer();
+      const base64Audio = Buffer.from(audioBuffer).toString('base64');
+      
+      logger.info(`VOICEBOX synthesis successful, audio size: ${audioBuffer.byteLength} bytes`);
+
+      return {
+        success: true,
+        audioData: base64Audio,
+        duration: this.estimateAudioDuration(text)
+      };
+
+    } catch (error) {
+      logger.error(`VOICEBOX API call failed: ${error.message}`);
+      return { 
+        success: false, 
+        error: error.message 
+      };
+    }
+  }
+
 }
 
 module.exports = new TTSController();
