@@ -65,3 +65,11 @@ temp/
 # User data and cache
 user_data/
 cache/
+
+# Gradle
+.gradle/
+build/
+
+# Vosk model (large files)
+vosk-model-ja-0.22/
+ai-core/models/vosk-model-ja-0.22/
