@@ -88,5 +88,7 @@
     <string name="google_client_id">746177874239-0qmf6tbe2cbroulfm1sm68cgf2sid3u4.apps.googleusercontent.com</string>
     
     <!-- API Configuration -->
-    <string name="api_base_url">https://53a379d340ed.ngrok-free.app</string>
+    <!-- NOTE: prefer BuildConfig.SERVER_BASE_URL in code; this string is kept for legacy resources
+        and can be used by layouts that don't access BuildConfig directly. -->
+    <string name="api_base_url">https://1af343e6a50a.ngrok-free.app</string>
 </resources>

@@ -156,6 +156,18 @@ class SessionManager(
     
     private fun loadSessionHistory() {
         // TODO: Load from persistent storage or server
+        try {
+            val json = securePreferences.getUserString("session_history", null)
+            if (!json.isNullOrEmpty()) {
+                val gson = com.google.gson.Gson()
+                val type = com.google.gson.reflect.TypeToken.getParameterized(List::class.java, ChatSession::class.java).type
+                val list: List<ChatSession> = gson.fromJson(json, type)
+                _sessionHistory.postValue(list)
+                return
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to load session history", e)
+        }
         _sessionHistory.postValue(emptyList())
     }
     
@@ -180,7 +192,13 @@ class SessionManager(
     }
     
     private fun saveSessionHistory(history: List<ChatSession>) {
-        // TODO: Save to persistent storage
+        try {
+            val gson = com.google.gson.Gson()
+            val json = gson.toJson(history)
+            securePreferences.putUserString("session_history", json)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to save session history", e)
+        }
     }
     
     fun resumeSession(sessionId: String) {

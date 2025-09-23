@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import java.util.UUID
+import com.lumimei.assistant.BuildConfig
 
 class SecurePreferences(private val context: Context) {
     
@@ -204,6 +205,22 @@ class SecurePreferences(private val context: Context) {
     
     // Base URL取得メソッド
     fun getBaseUrl(): String {
-        return sharedPreferences.getString("base_url", "http://localhost:8080") ?: "http://localhost:8080"
+        // If user explicitly set a base_url and it's not the common local-dev placeholder, use it
+        val pref = sharedPreferences.getString("base_url", null)
+        if (!pref.isNullOrBlank()) {
+            // Treat localhost defaults as "not set" so real devices/emulators fall back to BuildConfig
+            val lower = pref.lowercase()
+            if (!lower.startsWith("http://localhost") && !lower.startsWith("http://10.0.2.2")) {
+                return pref
+            }
+        }
+
+        // Fall back to BuildConfig.SERVER_BASE_URL if available (useful for ngrok / CI overrides)
+        return try {
+            val buildBase = BuildConfig.SERVER_BASE_URL
+            if (!buildBase.isNullOrBlank()) buildBase else "http://localhost:8080"
+        } catch (e: Exception) {
+            "http://localhost:8080"
+        }
     }
 }

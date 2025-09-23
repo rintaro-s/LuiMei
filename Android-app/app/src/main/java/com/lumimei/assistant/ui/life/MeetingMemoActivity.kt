@@ -79,8 +79,7 @@ class MeetingMemoActivity : AppCompatActivity() {
     private fun checkPermissions() {
         val permissions = arrayOf(
             Manifest.permission.RECORD_AUDIO,
-            Manifest.permission.WRITE_EXTERNAL_STORAGE,
-            Manifest.permission.READ_EXTERNAL_STORAGE
+            Manifest.permission.WRITE_EXTERNAL_STORAGE
         )
         
         val missingPermissions = permissions.filter { permission ->
@@ -88,15 +87,11 @@ class MeetingMemoActivity : AppCompatActivity() {
         }
         
         if (missingPermissions.isNotEmpty()) {
-            Log.d(TAG, "Requesting permissions: ${missingPermissions.joinToString(", ")}")
             ActivityCompat.requestPermissions(
                 this,
                 missingPermissions.toTypedArray(),
                 PERMISSION_REQUEST_CODE
             )
-        } else {
-            Log.d(TAG, "All permissions already granted")
-            updateUI()
         }
     }
     
@@ -107,51 +102,13 @@ class MeetingMemoActivity : AppCompatActivity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         
-        Log.d(TAG, "Permission result: requestCode=$requestCode, permissions=${permissions.joinToString()}, results=${grantResults.joinToString()}")
-        
         if (requestCode == PERMISSION_REQUEST_CODE) {
-            val allGranted = grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }
-            
-            if (allGranted) {
-                Log.d(TAG, "All permissions granted")
-                Toast.makeText(this, "録音権限が許可されました", Toast.LENGTH_SHORT).show()
-                updateUI()
-            } else {
-                val deniedPermissions = permissions.filterIndexed { index, _ -> 
-                    index < grantResults.size && grantResults[index] != PackageManager.PERMISSION_GRANTED 
-                }
-                
-                Log.w(TAG, "Permissions denied: ${deniedPermissions.joinToString()}")
-                
-                Toast.makeText(this, "録音機能を使用するには権限が必要です。設定から権限を許可してください。", Toast.LENGTH_LONG).show()
-                
-                // 設定画面へのリンクを提供
-                showPermissionDialog()
-            }
-        }
-    }
-    
-    private fun showPermissionDialog() {
-        androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("権限が必要です")
-            .setMessage("議事録機能を使用するには、マイクと外部ストレージの権限が必要です。設定画面で権限を許可してください。")
-            .setPositiveButton("設定を開く") { _, _ ->
-                try {
-                    val intent = android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-                    val uri = android.net.Uri.fromParts("package", packageName, null)
-                    intent.data = uri
-                    startActivity(intent)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error opening app settings", e)
-                    Toast.makeText(this, "設定画面を開けませんでした", Toast.LENGTH_SHORT).show()
-                }
-            }
-            .setNegativeButton("閉じる") { dialog, _ ->
-                dialog.dismiss()
+            val allGranted = grantResults.all { it == PackageManager.PERMISSION_GRANTED }
+            if (!allGranted) {
+                Toast.makeText(this, "録音には権限が必要です", Toast.LENGTH_LONG).show()
                 finish()
             }
-            .setCancelable(false)
-            .show()
+        }
     }
     
     private fun startRecording() {

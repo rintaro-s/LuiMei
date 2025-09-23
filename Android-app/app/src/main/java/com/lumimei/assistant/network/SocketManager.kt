@@ -2,6 +2,7 @@ package com.lumimei.assistant.network
 
 import android.content.Context
 import android.util.Log
+import com.lumimei.assistant.utils.SmartLogger
 import com.lumimei.assistant.BuildConfig
 import com.lumimei.assistant.data.preferences.SecurePreferences
 import io.socket.client.IO
@@ -61,10 +62,10 @@ class SocketManager(
             setupSocketListeners()
             socket?.connect()
             
-            Log.d(TAG, "Attempting to connect to ${BuildConfig.SOCKET_URL}")
+            SmartLogger.d(context, TAG, "Attempting to connect to ${BuildConfig.SOCKET_URL}")
             
         } catch (e: URISyntaxException) {
-            Log.e(TAG, "Socket connection failed", e)
+            SmartLogger.e(context, TAG, "Socket connection failed", e)
         }
     }
     
@@ -74,7 +75,7 @@ class SocketManager(
         socket?.close()
         socket = null
         isConnected = false
-        Log.d(TAG, "Socket disconnected")
+    SmartLogger.d(context, TAG, "Socket disconnected")
     }
     
     fun isConnected(): Boolean = isConnected
@@ -91,13 +92,13 @@ class SocketManager(
         socket?.apply {
             on(EVENT_CONNECT) {
                 isConnected = true
-                Log.d(TAG, "Socket connected successfully")
+                SmartLogger.d(context, TAG, "Socket connected successfully")
                 notifyListeners(EVENT_CONNECT, null)
             }
             
             on(EVENT_DISCONNECT) {
                 isConnected = false
-                Log.d(TAG, "Socket disconnected")
+                SmartLogger.d(context, TAG, "Socket disconnected")
                 notifyListeners(EVENT_DISCONNECT, null)
                 
                 if (shouldReconnect) {
@@ -111,48 +112,59 @@ class SocketManager(
             }
             
             on(EVENT_CONNECT_ERROR) { args ->
-                Log.e(TAG, "Socket connection error: ${args.contentToString()}")
+                SmartLogger.e(context, TAG, "Socket connection error: ${args.contentToString()}")
                 notifyListeners(EVENT_CONNECT_ERROR, args.firstOrNull())
             }
             
             // Custom event listeners
             on(EVENT_MESSAGE_RESPONSE) { args ->
-                Log.d(TAG, "Message response received")
+                SmartLogger.d(context, TAG, "Message response received")
                 notifyListeners(EVENT_MESSAGE_RESPONSE, args.firstOrNull())
             }
             
             on(EVENT_FUNCTION_CALL) { args ->
-                Log.d(TAG, "Function call received")
+                SmartLogger.d(context, TAG, "Function call received")
                 notifyListeners(EVENT_FUNCTION_CALL, args.firstOrNull())
             }
             
             on(EVENT_TTS_STREAM) { args ->
-                Log.d(TAG, "TTS stream received")
+                SmartLogger.d(context, TAG, "TTS stream received")
+                notifyListeners(EVENT_TTS_STREAM, args.firstOrNull())
+            }
+
+            // Compatibility: servers may emit audio_chunk or tts_audio_chunk
+            on("audio_chunk") { args ->
+                SmartLogger.d(context, TAG, "audio_chunk received (compat)")
+                notifyListeners(EVENT_TTS_STREAM, args.firstOrNull())
+            }
+
+            on("tts_audio_chunk") { args ->
+                SmartLogger.d(context, TAG, "tts_audio_chunk received (compat)")
                 notifyListeners(EVENT_TTS_STREAM, args.firstOrNull())
             }
             
             on(EVENT_DEVICE_STATUS) { args ->
-                Log.d(TAG, "Device status update received")
+                SmartLogger.d(context, TAG, "Device status update received")
                 notifyListeners(EVENT_DEVICE_STATUS, args.firstOrNull())
             }
             
             on(EVENT_CALENDAR_UPDATE) { args ->
-                Log.d(TAG, "Calendar update received")
+                SmartLogger.d(context, TAG, "Calendar update received")
                 notifyListeners(EVENT_CALENDAR_UPDATE, args.firstOrNull())
             }
             
             on(EVENT_STUDY_SESSION_UPDATE) { args ->
-                Log.d(TAG, "Study session update received")
+                SmartLogger.d(context, TAG, "Study session update received")
                 notifyListeners(EVENT_STUDY_SESSION_UPDATE, args.firstOrNull())
             }
             
             on(EVENT_SLEEP_REMINDER) { args ->
-                Log.d(TAG, "Sleep reminder received")
+                SmartLogger.d(context, TAG, "Sleep reminder received")
                 notifyListeners(EVENT_SLEEP_REMINDER, args.firstOrNull())
             }
             
             on(EVENT_WAKE_WORD_DETECTED) { args ->
-                Log.d(TAG, "Wake word detected")
+                SmartLogger.d(context, TAG, "Wake word detected")
                 notifyListeners(EVENT_WAKE_WORD_DETECTED, args.firstOrNull())
             }
         }
@@ -171,14 +183,14 @@ class SocketManager(
             try {
                 listener(data)
             } catch (e: Exception) {
-                Log.e(TAG, "Error in socket listener for event $event", e)
+                SmartLogger.e(context, TAG, "Error in socket listener for event $event", e)
             }
         }
     }
     
     fun emit(event: String, data: Any? = null) {
         if (!isConnected) {
-            Log.w(TAG, "Socket not connected, cannot emit event: $event")
+            SmartLogger.w(context, TAG, "Socket not connected, cannot emit event: $event")
             return
         }
         
@@ -190,9 +202,9 @@ class SocketManager(
                 null -> socket?.emit(event)
                 else -> socket?.emit(event, data.toString())
             }
-            Log.d(TAG, "Emitted event: $event")
+            SmartLogger.d(context, TAG, "Emitted event: $event")
         } catch (e: Exception) {
-            Log.e(TAG, "Error emitting event $event", e)
+            SmartLogger.e(context, TAG, "Error emitting event $event", e)
         }
     }
     

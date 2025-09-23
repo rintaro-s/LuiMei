@@ -84,13 +84,24 @@ interface ApiService {
     // New APIs for added features
     @POST("stt/transcribe")
     suspend fun speechToText(@Body request: BackendCompatibleModels.STTRequest): Response<BackendCompatibleModels.STTResponse>
+
+    // Life assistant endpoints
+    @GET("life/cleaning")
+    suspend fun getCleaningSchedule(): Response<BackendCompatibleModels.ApiResponse<BackendCompatibleModels.CleaningSchedule>>
+
+    @GET("life/expenses")
+    suspend fun getExpenseTracking(@Query("month") month: String?): Response<BackendCompatibleModels.ApiResponse<BackendCompatibleModels.ExpenseTracking>>
     
     @GET("meeting/memos")
     suspend fun getMeetingMemos(): Response<BackendCompatibleModels.ApiResponse<List<BackendCompatibleModels.MeetingMemo>>>
     
-    @GET("cooking/suggestions")
-    suspend fun getCookingSuggestions(@Body request: BackendCompatibleModels.CookingSuggestions): Response<BackendCompatibleModels.ApiResponse<BackendCompatibleModels.CookingSuggestions>>
+    @GET("life/cooking")
+    suspend fun getCookingSuggestions(
+        @Query("ingredients") ingredients: String? = null,
+        @Query("difficulty") difficulty: String? = null,
+        @Query("mealType") mealType: String? = null
+    ): Response<BackendCompatibleModels.ApiResponse<BackendCompatibleModels.CookingSuggestions>>
     
     @GET("life/tips")
-    suspend fun getLifeTips(@Body request: BackendCompatibleModels.LifeTips): Response<BackendCompatibleModels.ApiResponse<BackendCompatibleModels.LifeTips>>
+    suspend fun getLifeTips(@Query("category") category: String? = null): Response<BackendCompatibleModels.ApiResponse<BackendCompatibleModels.LifeTips>>
 }

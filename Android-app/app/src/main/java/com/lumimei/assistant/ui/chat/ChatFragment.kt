@@ -25,7 +25,9 @@ import com.lumimei.assistant.LumiMeiApplication
 import com.lumimei.assistant.R
 import com.lumimei.assistant.ui.chat.ChatAdapter
 import com.lumimei.assistant.data.models.ChatMessage
-import com.lumimei.assistant.data.models.MessageType
+import com.lumimei.assistant.data.models.*
+import com.lumimei.assistant.utils.SmartLogger
+import java.util.UUID
 import com.lumimei.assistant.data.models.*
 import com.lumimei.assistant.data.models.BackendCompatibleModels.MessageRequest
 import com.lumimei.assistant.data.models.BackendCompatibleModels.VoiceInputRequest
@@ -191,7 +193,7 @@ class ChatFragment : Fragment() {
         }
         
         // Listen for AI responses
-        socket.on("ai_response") { args ->
+    socket.on("ai_response") { args: Array<Any?> ->
             if (args.isNotEmpty()) {
                 val response = args[0] as JSONObject
                 val content = response.optString("response", "")
@@ -199,9 +201,12 @@ class ChatFragment : Fragment() {
                 activity?.runOnUiThread {
                     if (content.isNotEmpty()) {
                         val message = ChatMessage(
-                            content = content,
-                            isUser = false,
-                            messageType = MessageType.TEXT
+                            id = UUID.randomUUID().toString(),
+                            text = content,
+                            isFromUser = false,
+                            timestamp = System.currentTimeMillis(),
+                            conversationId = app.sessionManager.getCurrentSessionId(),
+                            messageType = "text"
                         )
                         addMessage(message)
                     }
@@ -210,7 +215,7 @@ class ChatFragment : Fragment() {
         }
         
         // Listen for partial responses
-        socket.on("partial_text") { args ->
+    socket.on("partial_text") { args: Array<Any?> ->
             if (args.isNotEmpty()) {
                 val response = args[0] as JSONObject
                 val text = response.optString("text", "")
@@ -221,22 +226,35 @@ class ChatFragment : Fragment() {
             }
         }
         
-        // Listen for TTS stream
-        socket.on("tts_stream") { args ->
+        // Listen for TTS stream and server audio chunk events (compatibility)
+        socket.on("tts_stream") { args: Array<Any?> ->
+            activity?.runOnUiThread {
+                handleTTSStream(args)
+            }
+        }
+
+        // Some server implementations emit 'audio_chunk' or 'tts_audio_chunk'
+        socket.on("audio_chunk") { args: Array<Any?> ->
+            activity?.runOnUiThread {
+                handleTTSStream(args)
+            }
+        }
+
+        socket.on("tts_audio_chunk") { args: Array<Any?> ->
             activity?.runOnUiThread {
                 handleTTSStream(args)
             }
         }
         
         // Listen for function calls
-        socket.on("function_call") { args ->
+        socket.on("function_call") { args: Array<Any?> ->
             activity?.runOnUiThread {
                 handleFunctionCall(args)
             }
         }
         
         // Listen for errors
-        socket.on("error") { args ->
+        socket.on("error") { args: Array<Any?> ->
             if (args.isNotEmpty()) {
                 val error = args[0] as JSONObject
                 val message = error.optString("message", "Unknown error")
@@ -251,12 +269,15 @@ class ChatFragment : Fragment() {
     private fun sendTextMessage(text: String) {
         // Add user message to chat
         val userMessage = ChatMessage(
-            content = text,
-            isUser = true,
-            messageType = MessageType.TEXT
+            id = UUID.randomUUID().toString(),
+            text = text,
+            isFromUser = true,
+            timestamp = System.currentTimeMillis(),
+            conversationId = app.sessionManager.getCurrentSessionId(),
+            messageType = "text"
         )
         addMessage(userMessage)
-    persistMessage(userMessage)
+        persistMessage(userMessage)
         
         // Send via REST API using new backend models
         lifecycleScope.launch {
@@ -296,9 +317,12 @@ class ChatFragment : Fragment() {
                         if (messageResponse?.success == true) {
                             messageResponse.response?.let { assistantResponse ->
                                 val aiMessage = ChatMessage(
-                                    content = assistantResponse.content,
-                                    isUser = false,
-                                    messageType = MessageType.TEXT
+                                    id = UUID.randomUUID().toString(),
+                                    text = assistantResponse.content,
+                                    isFromUser = false,
+                                    timestamp = System.currentTimeMillis(),
+                                    conversationId = app.sessionManager.getCurrentSessionId(),
+                                    messageType = "text"
                                 )
                                 addMessage(aiMessage)
                                 persistMessage(aiMessage)
@@ -314,7 +338,7 @@ class ChatFragment : Fragment() {
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error sending message", e)
+                    SmartLogger.e(requireContext(), TAG, "Error sending message", e)
                 withContext(Dispatchers.Main) {
                     showError("メッセージの送信に失敗しました: ${e.message}")
                 }
@@ -365,10 +389,10 @@ class ChatFragment : Fragment() {
             }
             recordingThread?.start()
             
-            Log.d(TAG, "Recording started")
+                SmartLogger.d(requireContext(), TAG, "Recording started")
             
         } catch (e: Exception) {
-            Log.e(TAG, "Error starting recording", e)
+                SmartLogger.e(requireContext(), TAG, "Error starting recording", e)
             Toast.makeText(context, "録音を開始できませんでした", Toast.LENGTH_SHORT).show()
         }
     }
@@ -389,7 +413,7 @@ class ChatFragment : Fragment() {
         recordingThread?.interrupt()
         recordingThread = null
         
-        Log.d(TAG, "Recording stopped")
+        SmartLogger.d(requireContext(), TAG, "Recording stopped")
     }
     
     private fun recordAudioForProcessing() {
@@ -436,7 +460,7 @@ class ChatFragment : Fragment() {
                     )
                 )
                 
-                val response = apiClient.apiService.sendVoiceInput(request)
+                val response = apiClient.apiService.processVoiceInput(request)
                 
                 withContext(Dispatchers.Main) {
                     if (response.isSuccessful) {
@@ -446,9 +470,12 @@ class ChatFragment : Fragment() {
                             voiceResponse.transcription?.let { transcription ->
                                 if (transcription.isNotEmpty()) {
                                     val userMessage = ChatMessage(
-                                        content = transcription,
-                                        isUser = true,
-                                        messageType = MessageType.VOICE
+                                        id = UUID.randomUUID().toString(),
+                                        text = transcription,
+                                        isFromUser = true,
+                                        timestamp = System.currentTimeMillis(),
+                                        conversationId = app.sessionManager.getCurrentSessionId(),
+                                        messageType = "voice"
                                     )
                                     addMessage(userMessage)
                                     persistMessage(userMessage)
@@ -456,9 +483,12 @@ class ChatFragment : Fragment() {
                                     // Add AI response if available
                                     voiceResponse.response?.let { assistantResponse ->
                                         val aiMessage = ChatMessage(
-                                            content = assistantResponse.content,
-                                            isUser = false,
-                                            messageType = MessageType.TEXT
+                                            id = UUID.randomUUID().toString(),
+                                            text = assistantResponse.content,
+                                            isFromUser = false,
+                                            timestamp = System.currentTimeMillis(),
+                                            conversationId = app.sessionManager.getCurrentSessionId(),
+                                            messageType = "text"
                                         )
                                         addMessage(aiMessage)
                                         persistMessage(aiMessage)
@@ -473,7 +503,7 @@ class ChatFragment : Fragment() {
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error processing voice input", e)
+                    SmartLogger.e(requireContext(), TAG, "Error processing voice input", e)
                 withContext(Dispatchers.Main) {
                     showError("音声処理に失敗しました: ${e.message}")
                 }
@@ -501,24 +531,95 @@ class ChatFragment : Fragment() {
     }
     
     private fun updateLastBotMessage(text: String) {
-        if (messages.isNotEmpty() && !messages.last().isUser) {
+        if (messages.isNotEmpty() && !messages.last().isFromUser) {
             val lastIndex = messages.size - 1
-            messages[lastIndex] = messages[lastIndex].copy(content = text)
+            messages[lastIndex] = messages[lastIndex].copy(text = text)
             chatAdapter.notifyItemChanged(lastIndex)
         } else {
             val message = ChatMessage(
-                content = text,
-                isUser = false,
-                messageType = MessageType.TEXT
+                id = UUID.randomUUID().toString(),
+                text = text,
+                isFromUser = false,
+                timestamp = System.currentTimeMillis(),
+                conversationId = app.sessionManager.getCurrentSessionId(),
+                messageType = "text"
             )
             addMessage(message)
         }
     }
     
     private fun handleTTSStream(data: Any?) {
-        // Handle TTS audio stream
+        // Handle TTS audio stream: expect either a JSONObject or array with fields
         Log.d(TAG, "TTS stream received: $data")
-        addSystemMessage("音声応答を受信しました")
+
+        try {
+            val json = when (data) {
+                is Array<*> -> (data.getOrNull(0) as? JSONObject)
+                is JSONObject -> data
+                else -> null
+            }
+
+            val base64Audio = json?.optString("audioData") ?: json?.optString("data") ?: json?.optString("chunk")
+            val format = json?.optString("format") ?: "pcm16"
+
+            if (base64Audio.isNullOrEmpty()) {
+                addSystemMessage("音声チャンクを受信しました (データ無し)")
+                return
+            }
+
+            // Decode base64 to bytes
+            val audioBytes = Base64.decode(base64Audio, Base64.DEFAULT)
+
+            // If WAV header present, strip header to get PCM16
+            val pcmBytes = if (isWav(audioBytes)) {
+                stripWavHeader(audioBytes)
+            } else {
+                audioBytes
+            }
+
+            // Play PCM16 via AudioTrack
+            playPcm16(pcmBytes)
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error handling TTS stream", e)
+            addSystemMessage("音声応答の再生に失敗しました: ${e.message}")
+        }
+    }
+
+    private fun isWav(bytes: ByteArray): Boolean {
+        if (bytes.size < 12) return false
+        val header = String(bytes, 0, 4)
+        return header == "RIFF"
+    }
+
+    private fun stripWavHeader(wav: ByteArray): ByteArray {
+        // Minimal WAV header parsing to find 'data' chunk
+        var offset = 12
+        while (offset + 8 < wav.size) {
+            val chunkId = String(wav, offset, 4)
+            val chunkSize = java.nio.ByteBuffer.wrap(wav, offset + 4, 4).order(java.nio.ByteOrder.LITTLE_ENDIAN).int
+            if (chunkId == "data") {
+                val dataStart = offset + 8
+                return wav.copyOfRange(dataStart, dataStart + chunkSize.coerceAtMost(wav.size - dataStart))
+            }
+            offset += 8 + chunkSize
+        }
+        // Fallback: return original
+        return wav
+    }
+
+    private fun playPcm16(pcm: ByteArray) {
+        try {
+            val minBuf = android.media.AudioTrack.getMinBufferSize(SAMPLE_RATE, android.media.AudioFormat.CHANNEL_OUT_MONO, android.media.AudioFormat.ENCODING_PCM_16BIT)
+            val track = android.media.AudioTrack(android.media.AudioManager.STREAM_MUSIC, SAMPLE_RATE, android.media.AudioFormat.CHANNEL_OUT_MONO, android.media.AudioFormat.ENCODING_PCM_16BIT, maxOf(minBuf, pcm.size), android.media.AudioTrack.MODE_STREAM)
+            track.play()
+            track.write(pcm, 0, pcm.size)
+            // Allow the track to finish playing
+            track.stop()
+            track.release()
+        } catch (e: Exception) {
+            Log.e(TAG, "AudioTrack playback failed", e)
+        }
     }
     
     private fun handleFunctionCall(data: Any?) {
@@ -529,13 +630,13 @@ class ChatFragment : Fragment() {
                 val functionName = jsonData?.optString("function")
                 val parameters = jsonData?.optJSONObject("parameters")
 
-                Log.d(TAG, "Function call: $functionName with parameters: $parameters")
+                    SmartLogger.d(requireContext(), TAG, "Function call: $functionName with parameters: $parameters")
 
                 // Add system message about function execution
                 addSystemMessage("機能を実行中: $functionName")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error handling function call", e)
+                SmartLogger.e(requireContext(), TAG, "Error handling function call", e)
         }
     }
     
@@ -646,7 +747,7 @@ class ChatFragment : Fragment() {
     
     private fun showError(message: String) {
         Toast.makeText(context, message, Toast.LENGTH_LONG).show()
-        Log.e(TAG, message)
+        SmartLogger.e(requireContext(), TAG, message)
     }
     
     private fun addMessage(message: ChatMessage) {
@@ -666,9 +767,12 @@ class ChatFragment : Fragment() {
     
     private fun addSystemMessage(content: String) {
         val systemMessage = ChatMessage(
-            content = content,
-            isUser = false,
-            messageType = MessageType.SYSTEM
+            id = UUID.randomUUID().toString(),
+            text = content,
+            isFromUser = false,
+            timestamp = System.currentTimeMillis(),
+            conversationId = app.sessionManager.getCurrentSessionId(),
+            messageType = "system"
         )
         addMessage(systemMessage)
     }

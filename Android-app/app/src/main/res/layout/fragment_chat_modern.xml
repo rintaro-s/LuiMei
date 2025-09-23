@@ -69,11 +69,12 @@
 
             </LinearLayout>
 
-            <!-- Voice Input Indicator -->
+            <!-- Header voice indicator hidden to avoid duplicate mic icons -->
             <androidx.cardview.widget.CardView
                 android:id="@+id/voice_indicator"
                 android:layout_width="56dp"
                 android:layout_height="56dp"
+                android:visibility="gone"
                 app:cardCornerRadius="28dp"
                 app:cardElevation="4dp"
                 app:cardBackgroundColor="@color/white">
@@ -128,12 +129,15 @@
             android:gravity="center_vertical"
             android:padding="8dp">
 
-            <!-- Voice Input Button -->
+            <!-- Small voice button hidden to avoid confusion; central btn_voice_main is primary mic -->
             <androidx.cardview.widget.CardView
                 android:id="@+id/btn_voice_input"
                 android:layout_width="48dp"
                 android:layout_height="48dp"
                 android:layout_margin="4dp"
+                android:visibility="gone"
+                android:contentDescription="音声入力を開始"
+                android:tooltipText="音声入力（短押しで開始/停止）"
                 app:cardCornerRadius="24dp"
                 app:cardElevation="4dp"
                 app:cardBackgroundColor="@color/primary_color">
@@ -159,7 +163,8 @@
                 android:inputType="textMultiLine"
                 android:maxLines="3"
                 android:padding="12dp"
-                android:textSize="16sp" />
+                android:textSize="16sp"
+                android:contentDescription="メッセージ入力" />
 
             <!-- Send Button -->
             <androidx.cardview.widget.CardView
@@ -182,6 +187,8 @@
 
             <!-- TTS Button -->
             <androidx.cardview.widget.CardView
+                android:contentDescription="読み上げ切替"
+                android:tooltipText="読み上げのオン/オフ"
                 android:id="@+id/btn_tts"
                 android:layout_width="48dp"
                 android:layout_height="48dp"
@@ -252,5 +259,31 @@
         </LinearLayout>
 
     </androidx.cardview.widget.CardView>
+
+    <!-- Central main voice button (push-to-talk). Placed above the input container so
+         ChatFragmentModern can find it via R.id.btn_voice_main and attach touch listeners. -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/btn_voice_main"
+        android:layout_width="72dp"
+        android:layout_height="72dp"
+        android:layout_marginBottom="12dp"
+        android:layout_marginEnd="24dp"
+        android:clickable="true"
+        android:focusable="true"
+        app:cardCornerRadius="36dp"
+        app:cardElevation="8dp"
+        app:cardBackgroundColor="@color/primary_color"
+        app:layout_constraintBottom_toTopOf="@+id/input_container"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <ImageView
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:layout_gravity="center"
+            android:src="@drawable/ic_mic"
+            android:tint="@color/white"
+            android:contentDescription="メインマイク（長押しで話す）" />
+
+    </com.google.android.material.card.MaterialCardView>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

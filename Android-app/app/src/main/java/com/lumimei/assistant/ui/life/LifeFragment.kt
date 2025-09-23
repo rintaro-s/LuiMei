@@ -30,23 +30,25 @@ class LifeFragment : Fragment() {
     private fun setupLifeFeatures() {
         // 生活管理機能のセットアップ
         try {
-            // 会議メモ機能
-            binding.btnMeetingMemo.setOnClickListener {
+            // 会議メモ機能 - Null safe
+            view?.findViewById<View>(com.lumimei.assistant.R.id.btn_meeting_memo)?.setOnClickListener {
                 startActivity(Intent(requireContext(), MeetingMemoActivity::class.java))
             }
 
-            // 料理提案機能
-            binding.btnCooking.setOnClickListener {
+            // 料理提案機能 - Null safe
+            view?.findViewById<View>(com.lumimei.assistant.R.id.btn_cooking)?.setOnClickListener {
                 startActivity(Intent(requireContext(), CookingSuggestionsActivity::class.java))
             }
 
-            // 家計簿機能
-            binding.btnExpenses.setOnClickListener {
+            // 家計簿機能 - Null safe
+            view?.findViewById<View>(com.lumimei.assistant.R.id.btn_expenses)?.setOnClickListener {
                 startActivity(Intent(requireContext(), ExpenseTrackingActivity::class.java))
             }
 
-            // 生活のヒント機能を削除（ユーザー要求により）
-            // binding.btnLifeTips - この機能は削除済み
+            // 生活のコツ機能 - Null safe
+            view?.findViewById<View>(com.lumimei.assistant.R.id.btn_life_tips)?.setOnClickListener {
+                startActivity(Intent(requireContext(), LifeTipsActivity::class.java))
+            }
         } catch (e: Exception) {
             // Handle any view access errors gracefully
         }

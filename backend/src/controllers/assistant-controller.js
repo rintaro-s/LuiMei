@@ -3,15 +3,32 @@
  * TTS統合応答、ストリーミング、ウェイクワード機能
  */
 
-// Helper function to generate TTS audio (mock)
-function generateTTSAudio(text, voice = 'meimei', format = 'wav', sampleRate = 24000) {
-  // Mock TTS generation - in real implementation, this would call TTS service
-  const mockAudioBase64 = Buffer.from(`mock_audio_${text}_${voice}_${format}_${sampleRate}`).toString('base64');
-  return {
-    mime: `audio/${format}`,
-    base64: mockAudioBase64,
-    duration: text.length * 0.1 // Mock duration calculation
-  };
+// Helper function to generate TTS audio using the TTSController
+async function generateTTSAudio(text, voice = 'meimei', format = 'wav', sampleRate = 24000) {
+  try {
+    // Lazy require to avoid circular dependency during module load
+    const ttsController = require('./tts-controller');
+
+    // Attempt to use the unified performTTS pipeline
+    const result = await ttsController.performTTS(text, voice, { format, sampleRate });
+
+    // Normalize result to expected shape
+    return {
+      mime: `audio/${result.format || format}`,
+      base64: result.base64,
+      duration: result.duration || (text.length * 0.1)
+    };
+  } catch (err) {
+    console.error('generateTTSAudio: TTSController.performTTS failed, falling back to mock:', err && err.message);
+
+    // Fallback: previous simple mock (kept only to avoid hard failures)
+    const mockAudioBase64 = Buffer.from(`mock_audio_${text}_${voice}_${format}_${sampleRate}`).toString('base64');
+    return {
+      mime: `audio/${format}`,
+      base64: mockAudioBase64,
+      duration: text.length * 0.1 // Mock duration calculation
+    };
+  }
 }
 
 // Helper function to process device commands
@@ -94,10 +111,10 @@ const reply = async (req, res) => {
     // Generate intelligent reply
     const replyText = generateReply(userText, context, actions);
 
-    // Generate TTS audio if requested
+    // Generate TTS audio if requested (await the async generator)
     let audio = null;
     if (options.speak) {
-      audio = generateTTSAudio(
+      audio = await generateTTSAudio(
         replyText,
         options.voice || 'meimei',
         options.format || 'wav',

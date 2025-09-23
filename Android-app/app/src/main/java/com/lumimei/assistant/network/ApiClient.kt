@@ -10,6 +10,7 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
+import android.util.Log
 import retrofit2.converter.gson.GsonConverterFactory
 import java.util.concurrent.TimeUnit
 import com.lumimei.assistant.data.models.BackendCompatibleModels.TokenResponse
@@ -102,6 +103,7 @@ class ApiClient(
     
     companion object {
         const val TIMEOUT_SECONDS = 30L
+        private const val TAG = "ApiClient"
     }
 
     private fun refreshAccessTokenSync(): String? {
@@ -177,9 +179,18 @@ class ApiClient(
         return try {
             val jsonBody = gson.toJson(request)
             val requestBody = jsonBody.toRequestBody("application/json".toMediaType())
-            
+
+            // Debug: log BuildConfig and secure preferences so we can confirm which base URL is being used
+            val buildBase = try { BuildConfig.SERVER_BASE_URL } catch (e: Exception) { "" }
+            val secureBase = securePreferences.getBaseUrl()
+            Log.d(TAG, "synthesizeSpeech -> BuildConfig.SERVER_BASE_URL=$buildBase securePrefBase=$secureBase")
+
+            // Use securePreferences value for the actual request to preserve runtime overrides
+            val effectiveUrl = "${secureBase}/api/tts"
+            Log.d(TAG, "synthesizeSpeech -> url=$effectiveUrl payload=$jsonBody")
+
             val httpRequest = Request.Builder()
-                .url("${securePreferences.getBaseUrl()}/api/tts")
+                .url(effectiveUrl)
                 .post(requestBody)
                 .build()
                 

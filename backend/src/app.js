@@ -14,8 +14,6 @@ const envPath = path.resolve(__dirname, '..', '.env');
 dotenv.config({ path: envPath });
 console.log('Loaded environment from', envPath);
 
-// Load passport configuration
-require('./config/passport');
 
 // Initialize Express app
 const app = express();
@@ -33,6 +31,7 @@ const io = new Server(server, {
 const fs = require('fs');
 // 'path' is already required above for env loading
 const LOG_PATH = process.env.ACCESS_LOG_PATH || require('path').join(__dirname, '..', '..', 'logs', 'access.log');
+const { writeErrorLog, ERROR_LOG_PATH } = require('./utils/error-logger');
 
 function ensureLogDir() {
   try {
@@ -88,8 +87,21 @@ io.use((socket, next) => {
 
 // Middleware
 app.use(helmet());
+// Configure CORS origins from environment (comma separated)
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
 app.use(cors({
-  origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'],
+  origin: function(origin, callback) {
+    // Allow requests with no origin (curl, mobile apps, server-to-server)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.length === 0) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) !== -1) return callback(null, true);
+    // Allow subdomain/ngrok host patterns
+    try {
+      const url = new URL(origin);
+      if (allowedOrigins.indexOf(url.origin) !== -1) return callback(null, true);
+    } catch (e) { /* ignore */ }
+    return callback(new Error('Not allowed by CORS'));
+  },
   credentials: true
 }));
 // Access logger
@@ -100,10 +112,16 @@ app.use(accessLogger());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Initialize passport
-app.use(passport.initialize());
+// Development: shallow request logger to capture request bodies for debugging
+if (process.env.NODE_ENV === 'development') {
+  try {
+    const requestLogger = require('./utils/request-logger');
+    app.use(requestLogger);
+    console.log('ℹ️  Request logger enabled (development only)');
+  } catch (e) { console.warn('Could not enable request logger:', e && e.message ? e.message : e); }
+}
 
-// Health check endpoint
+// Health check endpoint (always available)
 app.get('/health', (req, res) => {
   res.json({
     status: 'healthy',
@@ -113,59 +131,140 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Routes
-app.use('/auth', require('./routes/auth'));
-// Backwards-compatible mount for clients expecting /api/auth/*
-app.use('/api/auth', require('./routes/auth'));
-app.use('/api/users', require('./routes/user'));
-app.use('/api/chat', require('./routes/chat-api'));
-app.use('/api/devices', require('./routes/device'));
-app.use('/api/ai', require('./routes/ai'));
-app.use('/api/communication', require('./routes/communication'));
-app.use('/api/tasks', require('./routes/task'));
-app.use('/api/v1', require('./routes/v1')); // New v1 API routes
+// NOTE: 404 handler will be registered after routes during startup (see startServer)
 
-// Setup Socket.IO handlers
-const { setupSocketHandlers } = require('./socket/handlers');
-setupSocketHandlers(io);
+// Start-up sequence: connect to MongoDB first, then initialize passport, routes and socket handlers.
+async function startServer() {
+  const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/lumimei_os';
+  const mongoOptions = {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+    serverSelectionTimeoutMS: 5000,
+    maxPoolSize: 10,
+    // Keep default buffering behavior for safety during startup if connection is slow
+    bufferCommands: false
+  };
 
-// 404 handler
-app.use('*', (req, res) => {
-  res.status(404).json({
-    error: 'Not Found',
-    message: `Route ${req.originalUrl} not found`
-  });
-});
-
-// Connect to MongoDB (non-blocking)
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/lumimei_os', {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-  serverSelectionTimeoutMS: 5000,
-  maxPoolSize: 10,
-  bufferCommands: false
-}).then(() => {
-  console.log('📊 Connected to MongoDB');
-}).catch(err => {
-  console.log('❌ MongoDB connection error:', err.message);
-  console.log('⚠️  Server will continue without database functionality');
-});
-
-// Start server
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`🚀 LumiMei OS Server running on port ${PORT}`);
-  console.log(`📚 Health check: http://localhost:${PORT}/health`);
-  console.log(`🔌 Socket.IO ready for client connections`);
-  // VOSK model check
+  let dbConnected = false;
   try {
-    const modelPath = process.env.VOSK_MODEL_PATH || require('path').resolve(process.cwd(), 'vosk-model-ja-0.22');
-    if (!require('fs').existsSync(modelPath)) {
-      console.warn('⚠️  VOSK model not found at', modelPath, '\n   Please download and place the model in the project root or set VOSK_MODEL_PATH in .env');
-    } else {
-      console.log('✅ VOSK model found at', modelPath);
-    }
-  } catch (e) { /* ignore */ }
+    await mongoose.connect(mongoUri, mongoOptions);
+    console.log('📊 Connected to MongoDB');
+    dbConnected = true;
+  } catch (err) {
+    console.log('❌ MongoDB connection error:', err.message);
+    console.log('⚠️  Server will continue without database functionality');
+    // As a fallback to avoid "Cannot call ... before initial connection is complete" errors,
+    // enable mongoose command buffering so model calls don't immediately throw while the DB is down.
+    try {
+      mongoose.set('bufferCommands', true);
+      console.log('ℹ️  Enabled mongoose bufferCommands as fallback');
+    } catch (e) { /* ignore */ }
+  }
+
+  // Load passport configuration only after we've had a chance to configure mongoose buffering or connect
+  try {
+    require('./config/passport');
+    app.use(passport.initialize());
+  } catch (e) {
+    console.error('Failed to initialize passport:', e && e.message ? e.message : e);
+  }
+
+  // Routes (register after passport is initialized)
+  app.use('/auth', require('./routes/auth'));
+  // Backwards-compatible mount for clients expecting /api/auth/*
+  app.use('/api/auth', require('./routes/auth'));
+  // Compatibility mounts: allow older clients to call routes without /api prefix
+  app.use('/communication', require('./routes/communication'));
+  app.use('/chat', require('./routes/chat-api'));
+  app.use('/ai', require('./routes/ai'));
+  // Legacy compatibility mounts for older clients
+  app.use('/life', require('./routes/life'));
+  app.use('/study', require('./routes/study'));
+  // Also accept very short legacy endpoints at server root for some clients
+  // Some older clients POST to /study/start and /study/end directly without the router prefix.
+  // Forward those directly to the StudyController handlers so they behave the same as the
+  // '/study' compatibility router above.
+  try {
+    const StudyController = require('./controllers/study-controller');
+    const studyController = new StudyController();
+    app.post('/study/start', (req, res) => studyController.startStudySession(req, res));
+    app.post('/study/end', (req, res) => studyController.endStudySession(req, res));
+  } catch (e) {
+    console.warn('Could not register short study endpoints:', e && e.message ? e.message : e);
+  }
+  app.use('/api/users', require('./routes/user'));
+  app.use('/api/chat', require('./routes/chat-api'));
+  app.use('/api/devices', require('./routes/device'));
+  app.use('/api/ai', require('./routes/ai'));
+  app.use('/api/communication', require('./routes/communication'));
+  app.use('/api/tasks', require('./routes/task'));
+  app.use('/api/v1', require('./routes/v1')); // New v1 API routes
+
+  // Compatibility route: accept POST /api/tts from Android clients and forward to TTS controller
+  app.post('/api/tts', (req, res) => require('./controllers/tts-controller').synthesizeSpeech(req, res));
+
+  // Setup Socket.IO handlers
+  try {
+    const { setupSocketHandlers } = require('./socket/handlers');
+    setupSocketHandlers(io);
+  } catch (e) {
+    console.error('Failed to setup socket handlers:', e && e.message ? e.message : e);
+  }
+
+  // 404 handler (registered after routes)
+  app.use('*', (req, res) => {
+    res.status(404).json({
+      error: 'Not Found',
+      message: `Route ${req.originalUrl} not found`
+    });
+  });
+
+  // Start server
+  const PORT = process.env.PORT || 3000;
+  server.listen(PORT, () => {
+    console.log(`🚀 LumiMei OS Server running on port ${PORT}`);
+    console.log(`📚 Health check: http://localhost:${PORT}/health`);
+    console.log(`🔌 Socket.IO ready for client connections`);
+    // VOSK model check
+    try {
+      const modelPath = process.env.VOSK_MODEL_PATH || require('path').resolve(process.cwd(), 'vosk-model-ja-0.22');
+      if (!require('fs').existsSync(modelPath)) {
+        console.warn('⚠️  VOSK model not found at', modelPath, '\n   Please download and place the model in the project root or set VOSK_MODEL_PATH in .env');
+      } else {
+        console.log('✅ VOSK model found at', modelPath);
+      }
+    } catch (e) { /* ignore */ }
+  });
+}
+
+// Kick off start-up
+startServer();
+
+// Global error handlers to capture uncaught errors and unhandled rejections
+process.on('uncaughtException', (err) => {
+  try {
+    console.error('Uncaught Exception:', err && err.stack ? err.stack : err);
+    writeErrorLog({ level: 'uncaughtException', error: err && err.stack ? err.stack : String(err) });
+  } catch (e) { console.error('Failed to write uncaughtException to error log', e && e.message ? e.message : e); }
+  // Do not exit immediately in dev; allow supervisor to handle process lifecycle
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  try {
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+    writeErrorLog({ level: 'unhandledRejection', reason: reason && reason.stack ? reason.stack : String(reason) });
+  } catch (e) { console.error('Failed to write unhandledRejection to error log', e && e.message ? e.message : e); }
+});
+
+// Express error handling middleware (ensure this is last middleware)
+app.use((err, req, res, next) => {
+  try {
+    console.error('Express error:', err && err.stack ? err.stack : err);
+    writeErrorLog({ level: 'express', path: req.originalUrl, method: req.method, error: err && err.stack ? err.stack : String(err) });
+  } catch (e) { console.error('Failed to write express error to error log', e && e.message ? e.message : e); }
+  // If headers already sent, delegate to default handler
+  if (res.headersSent) return next(err);
+  res.status(err && err.status ? err.status : 500).json({ success: false, error: err && err.message ? err.message : 'Internal Server Error' });
 });
 
 module.exports = app;

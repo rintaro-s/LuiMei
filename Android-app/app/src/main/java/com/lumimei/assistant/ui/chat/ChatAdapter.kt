@@ -4,7 +4,7 @@ import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
 import com.lumimei.assistant.data.models.ChatMessage
-import com.lumimei.assistant.data.models.MessageType
+// MessageType enum removed; use messageType string values in ChatMessage
 import com.lumimei.assistant.databinding.ItemMessageUserBinding
 import com.lumimei.assistant.databinding.ItemMessageAssistantBinding
 import com.lumimei.assistant.databinding.ItemMessageSystemBinding

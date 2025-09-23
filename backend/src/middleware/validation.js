@@ -5,7 +5,8 @@ const schemas = {
   messageSchema: Joi.object({
     userId: Joi.string().required(),
     message: Joi.string().required(),
-    messageType: Joi.string().valid('text', 'voice', 'image').default('text'),
+  // Allow flexible messageType values (legacy clients may send 'voice_question' etc.)
+  messageType: Joi.string().default('text'),
     context: Joi.object().default({}),
     options: Joi.object({
       sessionId: Joi.string(),
@@ -160,6 +161,14 @@ const validateRequest = (schemaName) => {
         error: 'Invalid validation schema'
       });
     }
+
+    // If authentication middleware has populated req.user, inject userId into body for compatibility
+    try {
+      if (req.user && !req.body) req.body = {};
+      if (req.user && req.user.userId && typeof req.body.userId === 'undefined') {
+        req.body.userId = req.user.userId;
+      }
+    } catch (e) { /* ignore */ }
 
     const { error, value } = schema.validate(req.body, {
       abortEarly: false,

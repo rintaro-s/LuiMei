@@ -6,6 +6,19 @@
     android:layout_height="match_parent"
     android:background="@color/background_color">
 
+    <!-- Session info -->
+    <TextView
+        android:id="@+id/tvSessionInfo"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="セッション: 不明"
+        android:textSize="12sp"
+        android:textColor="@color/text_secondary"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        android:layout_marginStart="16dp"
+        android:layout_marginTop="8dp" />
+
     <!-- Chat Messages RecyclerView -->
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recyclerViewChat"
@@ -51,23 +64,23 @@
                 android:textSize="16sp"
                 android:layout_marginEnd="12dp" />
 
-            <!-- Send Button -->
-            <androidx.cardview.widget.CardView
-                android:id="@+id/btn_send"
+            <!-- Send Button (expected id by binding) -->
+            <Button
+                android:id="@+id/buttonSend"
+                style="?attr/borderlessButtonStyle"
                 android:layout_width="48dp"
                 android:layout_height="48dp"
-                app:cardCornerRadius="24dp"
-                app:cardElevation="4dp"
-                app:cardBackgroundColor="@color/primary_color">
+                android:backgroundTint="@color/primary_color"
+                android:textColor="@color/white"
+                android:text="送信" />
 
-                <ImageView
-                    android:layout_width="24dp"
-                    android:layout_height="24dp"
-                    android:layout_gravity="center"
-                    android:src="@drawable/ic_send"
-                    android:tint="@color/white" />
-
-            </androidx.cardview.widget.CardView>
+            <!-- Hidden/aux voice button used by binding (appears as small button) -->
+            <Button
+                android:id="@+id/buttonVoice"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:visibility="gone"
+                android:text="🎤" />
 
         </LinearLayout>
 
@@ -154,6 +167,31 @@
 
     </androidx.cardview.widget.CardView>
 
+    <!-- New session and history buttons -->
+    <LinearLayout
+        android:id="@+id/session_controls"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        android:layout_margin="16dp">
+
+        <Button
+            android:id="@+id/btnNewSession"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="新規" />
+
+        <Button
+            android:id="@+id/btnHistory"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="履歴"
+            android:layout_marginStart="8dp" />
+
+    </LinearLayout>
+
     <!-- Recording Animation Overlay -->
     <androidx.cardview.widget.CardView
         android:id="@+id/voice_recording_overlay"
@@ -194,4 +232,42 @@
 
     </androidx.cardview.widget.CardView>
 
+    <!-- Recording indicator (hidden by default) -->
+    <LinearLayout
+        android:id="@+id/recordingIndicator"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:visibility="gone"
+        app:layout_constraintBottom_toTopOf="@+id/btn_voice_main"
+        app:layout_constraintStart_toStartOf="parent"
+        android:layout_marginStart="24dp"
+        android:layout_marginBottom="12dp">
+
+        <View android:id="@+id/recordingDot1" android:layout_width="8dp" android:layout_height="8dp" android:background="@drawable/circle_red" android:alpha="0.3" />
+        <View android:id="@+id/recordingDot2" android:layout_width="8dp" android:layout_height="8dp" android:background="@drawable/circle_red" android:layout_marginStart="6dp" android:alpha="0.3" />
+        <View android:id="@+id/recordingDot3" android:layout_width="8dp" android:layout_height="8dp" android:background="@drawable/circle_red" android:layout_marginStart="6dp" android:alpha="0.3" />
+
+    </LinearLayout>
+
+    <!-- Loading overlay used during API calls -->
+    <FrameLayout
+        android:id="@+id/loadingOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone"
+        android:background="#80000000"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent">
+
+        <TextView
+            android:id="@+id/loadingText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="読み込み中..."
+            android:textColor="@color/white"
+            android:textSize="16sp"
+            android:layout_gravity="center" />
+
+    </FrameLayout>
 </androidx.constraintlayout.widget.ConstraintLayout>

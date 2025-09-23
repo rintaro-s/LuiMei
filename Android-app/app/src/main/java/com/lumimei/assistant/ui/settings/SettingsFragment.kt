@@ -240,40 +240,23 @@ class SettingsFragment : Fragment() {
     
     private fun startOverlayService() {
         try {
-            // まず権限をチェック
-            if (!canDrawOverlays()) {
-                requestOverlayPermission()
-                return
-            }
-            
-            // オーバーレイサービスを開始
             val intent = Intent(requireContext(), OverlayService::class.java)
             intent.action = OverlayService.ACTION_SHOW_OVERLAY
-            intent.putExtra("userId", app.securePreferences.userId ?: "guest")
-            
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                requireContext().startForegroundService(intent)
-            } else {
-                requireContext().startService(intent)
-            }
+            requireContext().startService(intent)
             
             Toast.makeText(
                 requireContext(),
-                "✅ デジタルアシスタントのオーバーレイを開始しました",
-                Toast.LENGTH_LONG
+                "デジタルアシスタントのオーバーレイを開始しました",
+                Toast.LENGTH_SHORT
             ).show()
             
-            // オーバーレイ状態を保存
-            app.securePreferences.putUserBoolean("overlay_active", true)
-            
             Log.d(TAG, "Overlay service started successfully")
-            
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start overlay service", e)
             Toast.makeText(
                 requireContext(),
-                "❌ オーバーレイサービスの開始に失敗しました: ${e.message}",
-                Toast.LENGTH_LONG
+                "オーバーレイサービスの開始に失敗しました",
+                Toast.LENGTH_SHORT
             ).show()
         }
     }

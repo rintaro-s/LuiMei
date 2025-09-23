@@ -60,10 +60,12 @@ class OverlayChatService : Service() {
     
     override fun onBind(intent: Intent?): IBinder? = null
     
+    private var overlayParams: WindowManager.LayoutParams? = null
+
     private fun createOverlayView() {
         binding = OverlayChatBinding.inflate(LayoutInflater.from(this))
         overlayView = binding.root
-        
+
         setupOverlayParams()
         setupClickListeners()
         setupDragListeners()
@@ -86,8 +88,8 @@ class OverlayChatService : Service() {
         params.gravity = Gravity.TOP or Gravity.END
         params.x = 0
         params.y = 100
-        
-        overlayView?.layoutParams = params
+        overlayParams = params
+        overlayView?.layoutParams = overlayParams
     }
     
     private fun setupClickListeners() {
@@ -155,7 +157,7 @@ class OverlayChatService : Service() {
     private fun showOverlay() {
         if (overlayView?.parent == null) {
             try {
-                windowManager.addView(overlayView, overlayView?.layoutParams)
+                windowManager.addView(overlayView, overlayParams)
                 updateUI()
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to show overlay", e)

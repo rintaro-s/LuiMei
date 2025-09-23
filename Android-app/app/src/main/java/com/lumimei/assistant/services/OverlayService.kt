@@ -4,6 +4,7 @@ import android.app.Service
 import android.content.Intent
 import android.os.IBinder
 import android.util.Log
+import com.lumimei.assistant.utils.SmartLogger
 
 class OverlayService : Service() {
     companion object {
@@ -15,7 +16,7 @@ class OverlayService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        Log.d(TAG, "OverlayService created")
+    SmartLogger.d(this, TAG, "OverlayService created")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -29,17 +30,17 @@ class OverlayService : Service() {
     }
 
     private fun showOverlay() {
-        Log.d(TAG, "Show overlay requested")
+    SmartLogger.d(this, TAG, "Show overlay requested")
         // TODO: Implement overlay functionality
     }
 
     private fun hideOverlay() {
-        Log.d(TAG, "Hide overlay requested")
+    SmartLogger.d(this, TAG, "Hide overlay requested")
         // TODO: Implement hide overlay functionality
     }
 
     private fun toggleChatMode() {
-        Log.d(TAG, "Toggle chat mode requested")
+    SmartLogger.d(this, TAG, "Toggle chat mode requested")
         // TODO: Implement chat mode toggle
     }
 
@@ -49,6 +50,6 @@ class OverlayService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        Log.d(TAG, "OverlayService destroyed")
+    SmartLogger.d(this, TAG, "OverlayService destroyed")
     }
 }

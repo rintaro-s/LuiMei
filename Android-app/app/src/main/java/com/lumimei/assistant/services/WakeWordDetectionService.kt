@@ -11,6 +11,7 @@ import android.media.MediaRecorder
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
+import com.lumimei.assistant.utils.SmartLogger
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -125,7 +126,7 @@ class WakeWordDetectionService : Service() {
         if (isListening) return
         
         if (!hasAudioPermission()) {
-            Log.w(TAG, "Audio permission not granted")
+            SmartLogger.w(this, TAG, "Audio permission not granted")
             return
         }
         
@@ -139,7 +140,7 @@ class WakeWordDetectionService : Service() {
             )
             
             if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
-                Log.e(TAG, "AudioRecord initialization failed")
+                SmartLogger.e(this, TAG, "AudioRecord initialization failed")
                 return
             }
             
@@ -152,10 +153,10 @@ class WakeWordDetectionService : Service() {
                 processAudioStream()
             }
             
-            Log.i(TAG, "Wake word detection started")
+            SmartLogger.i(this, TAG, "Wake word detection started")
             
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to start wake word detection", e)
+            SmartLogger.e(this, TAG, "Failed to start wake word detection", e)
             isListening = false
         }
     }
@@ -173,7 +174,7 @@ class WakeWordDetectionService : Service() {
         audioRecord = null
         updateNotification()
         
-        Log.i(TAG, "Wake word detection stopped")
+        SmartLogger.i(this, TAG, "Wake word detection stopped")
     }
     
     private fun toggleWakeWordDetection() {
@@ -215,7 +216,7 @@ class WakeWordDetectionService : Service() {
                 delay(10) // CPU使用率を下げるための短い待機
                 
             } catch (e: Exception) {
-                Log.e(TAG, "Error processing audio stream", e)
+                SmartLogger.e(this, TAG, "Error processing audio stream", e)
                 break
             }
         }
@@ -246,14 +247,14 @@ class WakeWordDetectionService : Service() {
         
         // デバッグログを追加
         if (maxEnergy > threshold * 0.3) { // 30%の閾値でも音声を検出した場合ログ出力
-            Log.d(TAG, "Audio detected - Max: $maxEnergy, Avg: $averageEnergy, Threshold: $threshold, HasEnergy: $hasEnoughEnergy, HasVariation: $hasVariation")
+            SmartLogger.d(this, TAG, "Audio detected - Max: $maxEnergy, Avg: $averageEnergy, Threshold: $threshold, HasEnergy: $hasEnoughEnergy, HasVariation: $hasVariation")
         }
         
         return hasEnoughEnergy && hasVariation
     }
     
     private fun onWakeWordDetected() {
-        Log.i(TAG, "Wake word detected: $wakeWordPhrase")
+        SmartLogger.i(this, TAG, "Wake word detected: $wakeWordPhrase")
         
         // オーバーレイチャットを開く
         val overlayIntent = Intent(this, com.lumimei.assistant.ui.overlay.OverlayChatService::class.java).apply {
@@ -282,7 +283,7 @@ class WakeWordDetectionService : Service() {
             toneGenerator.startTone(android.media.ToneGenerator.TONE_PROP_BEEP, 200)
             toneGenerator.release()
         } catch (e: Exception) {
-            Log.w(TAG, "Could not play detection sound", e)
+            SmartLogger.w(this, TAG, "Could not play detection sound", e)
         }
     }
     
@@ -308,7 +309,7 @@ class WakeWordDetectionService : Service() {
                 vibrator.vibrate(200)
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Could not vibrate", e)
+            SmartLogger.w(this, TAG, "Could not vibrate", e)
         }
     }
     

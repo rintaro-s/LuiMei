@@ -18,6 +18,10 @@ class TTSController {
    */
   async synthesizeSpeech(req, res) {
     try {
+      // Quick debugging: always print a short line to stdout so operators can see incoming TTS calls
+      try {
+        console.log('[TTS] Incoming request:', req.method, req.originalUrl || req.url, 'from', req.ip || req.connection && req.connection.remoteAddress);
+      } catch (e) { /* ignore logging errors */ }
       const { 
         text, 
         voice = 'voicebox', // デフォルトでvoiceboxを使用

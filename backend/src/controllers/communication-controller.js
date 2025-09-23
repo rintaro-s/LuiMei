@@ -88,6 +88,15 @@ async function callLLM(message, context = {}, options = {}) {
   if (process.env.LLM_API_KEY) headers['Authorization'] = `Bearer ${process.env.LLM_API_KEY}`;
 
   // Use global fetch (Node 18+)
+  // Log the outgoing LLM call for debugging (truncate large payloads)
+  try {
+    const safePayload = JSON.stringify(payload);
+    const truncated = safePayload.length > 1500 ? safePayload.slice(0, 1500) + '...[truncated]' : safePayload;
+    console.log(`Calling LLM at ${apiUrl} with payload: ${truncated}`);
+  } catch (logErr) {
+    console.warn('Failed to stringify LLM payload for logging', logErr);
+  }
+
   const resp = await fetch(apiUrl, { method: 'POST', headers, body: JSON.stringify(payload) });
   if (!resp.ok) {
     const txt = await resp.text().catch(() => '');
@@ -996,3 +1005,6 @@ module.exports = {
   getSessionStatus,
   getCommandStatus
 };
+
+// Export callLLM for programmatic use by other controllers
+module.exports.callLLM = callLLM;

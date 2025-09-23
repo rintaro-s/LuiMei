@@ -15,19 +15,22 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.lumimei.assistant.R
 import com.lumimei.assistant.data.models.ChatMessage
+import com.lumimei.assistant.LumiMeiApplication
+import java.util.UUID
 import com.lumimei.assistant.data.preferences.SecurePreferences
 import com.lumimei.assistant.databinding.FragmentChatBinding
 import com.lumimei.assistant.network.ApiClient
 import com.lumimei.assistant.data.models.BackendCompatibleModels
 import kotlinx.coroutines.*
 
-class ChatFragmentModern : Fragment() {
+class ChatFragmentImproved : Fragment() {
     private var _binding: FragmentChatBinding? = null
     private val binding get() = _binding!!
     
     private lateinit var chatAdapter: ChatAdapter
     private lateinit var securePreferences: SecurePreferences
     private lateinit var apiClient: ApiClient
+    private lateinit var app: LumiMeiApplication
     
     private var isRecording = false
     private var isProcessing = false
@@ -44,7 +47,7 @@ class ChatFragmentModern : Fragment() {
     
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        
+        app = requireActivity().application as LumiMeiApplication
         securePreferences = SecurePreferences(requireContext())
         apiClient = ApiClient(requireContext(), securePreferences)
         
@@ -70,8 +73,8 @@ class ChatFragmentModern : Fragment() {
     }
     
     private fun setupClickListeners() {
-        // Send button
-        binding.btnSend.setOnClickListener {
+    // Send button
+    binding.buttonSend.setOnClickListener {
             if (isProcessing) {
                 Toast.makeText(context, "処理中です。しばらくお待ちください", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
@@ -84,8 +87,8 @@ class ChatFragmentModern : Fragment() {
             }
         }
         
-        // Central voice button (Push-to-Talk)
-        binding.btnVoiceMain.setOnTouchListener { v, event ->
+    // Central voice button (Push-to-Talk)
+    binding.btnVoiceMain.setOnTouchListener { v, event ->
             if (isProcessing) {
                 Toast.makeText(context, "処理中です。しばらくお待ちください", Toast.LENGTH_SHORT).show()
                 return@setOnTouchListener false
@@ -229,9 +232,11 @@ class ChatFragmentModern : Fragment() {
         
         // Add voice message to chat
         val voiceMessage = ChatMessage(
-            content = "🎤 $randomInput",
-            isUser = true,
-            timestamp = System.currentTimeMillis()
+            id = UUID.randomUUID().toString(),
+            text = "🎤 $randomInput",
+            isFromUser = true,
+            timestamp = System.currentTimeMillis(),
+            messageType = "voice"
         )
         chatAdapter.addMessage(voiceMessage)
         
@@ -264,9 +269,11 @@ class ChatFragmentModern : Fragment() {
         
         // Add user message to chat
         val userMessage = ChatMessage(
-            content = message,
-            isUser = true,
-            timestamp = System.currentTimeMillis()
+            id = UUID.randomUUID().toString(),
+            text = message,
+            isFromUser = true,
+            timestamp = System.currentTimeMillis(),
+            messageType = "text"
         )
         chatAdapter.addMessage(userMessage)
         
@@ -277,23 +284,26 @@ class ChatFragmentModern : Fragment() {
         lifecycleScope.launch {
             try {
                 val userId = securePreferences.userId ?: "anonymous"
-                val request = BackendCompatibleModels.ChatRequest(
+                val request = BackendCompatibleModels.MessageRequest(
                     userId = userId,
                     message = message,
-                    isVoice = false
+                    messageType = "text",
+                    context = mapOf("sessionId" to (app.sessionManager.getCurrentSessionId() ?: ""))
                 )
                 
-                val response = apiClient.assistantService.sendMessage(request)
+                val response = apiClient.apiService.sendMessage(request)
                 
                 if (response.isSuccessful && response.body()?.success == true) {
                     val assistantResponse = response.body()?.response
                     if (assistantResponse != null) {
                         val assistantMessage = ChatMessage(
-                            content = assistantResponse.content,
-                            isUser = false,
-                            timestamp = System.currentTimeMillis()
+                            id = UUID.randomUUID().toString(),
+                            text = assistantResponse.content,
+                            isFromUser = false,
+                            timestamp = System.currentTimeMillis(),
+                            messageType = "text"
                         )
-                        
+
                         chatAdapter.addMessage(assistantMessage)
                         binding.recyclerViewChat.scrollToPosition(chatAdapter.itemCount - 1)
                         
@@ -305,9 +315,11 @@ class ChatFragmentModern : Fragment() {
                 } else {
                     // Fallback response
                     val fallbackMessage = ChatMessage(
-                        content = "申し訳ございません。現在サーバーに接続できません。しばらく後でお試しください。",
-                        isUser = false,
-                        timestamp = System.currentTimeMillis()
+                        id = UUID.randomUUID().toString(),
+                        text = "申し訳ございません。現在サーバーに接続できません。しばらく後でお試しください。",
+                        isFromUser = false,
+                        timestamp = System.currentTimeMillis(),
+                        messageType = "text"
                     )
                     chatAdapter.addMessage(fallbackMessage)
                     binding.recyclerViewChat.scrollToPosition(chatAdapter.itemCount - 1)
@@ -318,9 +330,11 @@ class ChatFragmentModern : Fragment() {
                 
                 // Error response
                 val errorMessage = ChatMessage(
-                    content = "エラーが発生しました: ${e.message}",
-                    isUser = false,
-                    timestamp = System.currentTimeMillis()
+                    id = UUID.randomUUID().toString(),
+                    text = "エラーが発生しました: ${e.message}",
+                    isFromUser = false,
+                    timestamp = System.currentTimeMillis(),
+                    messageType = "text"
                 )
                 chatAdapter.addMessage(errorMessage)
                 binding.recyclerViewChat.scrollToPosition(chatAdapter.itemCount - 1)
@@ -342,7 +356,7 @@ class ChatFragmentModern : Fragment() {
                     voice = voiceId.toString()
                 )
                 
-                val response = apiClient.assistantService.synthesizeSpeech(request)
+                val response = apiClient.apiService.synthesizeText(request)
                 if (response.isSuccessful) {
                     Log.d("ChatFragmentModern", "TTS request successful")
                     Toast.makeText(context, "音声で応答中...", Toast.LENGTH_SHORT).show()

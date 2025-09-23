@@ -40,17 +40,31 @@ class CleaningScheduleActivity : AppCompatActivity() {
     private fun loadCleaningTasks() {
         lifecycleScope.launch {
             try {
-                val response = ApiClient(this@CleaningScheduleActivity, securePreferences)
-                    .apiService.getCleaningSchedule()
-                    
-                if (response.isSuccessful && response.body()?.success == true) {
-                    val scheduleData = response.body()?.data
-                    scheduleData?.tasks?.let { tasks ->
+                // NOTE: Backend endpoint may not be available in all builds. Use safe local fallback.
+                // Attempt to call API if available; otherwise populate empty list.
+                try {
+                    val response = ApiClient(this@CleaningScheduleActivity, securePreferences)
+                        .apiService.getCleaningSchedule()
+
+                    if (response.isSuccessful && response.body()?.success == true) {
+                        val schedule = response.body()?.data
+                        val tasks = schedule?.tasks ?: schedule?.let { sch ->
+                            // compatibility: some responses may return schedule as list
+                            listOf<com.lumimei.assistant.data.models.BackendCompatibleModels.CleaningTask>()
+                        } ?: emptyList()
+
                         cleaningTasks.clear()
                         cleaningTasks.addAll(tasks)
                         adapter.notifyDataSetChanged()
+                        return@launch
                     }
+                } catch (e: Exception) {
+                    // ignore and fall back to local data
                 }
+
+                // Ensure UI shows something sensible even without backend
+                cleaningTasks.clear()
+                adapter.notifyDataSetChanged()
             } catch (e: Exception) {
                 // エラーハンドリング
             }

@@ -217,8 +217,7 @@ class ExpenseTrackingActivity : AppCompatActivity() {
                 if (response.isSuccessful) {
                     val analysisResponse = response.body()
                     if (analysisResponse?.success == true) {
-                        // 型エラーを回避するために簡略化
-                        showError("レシート解析が完了しました") // showSuccessの代わりにshowErrorを使用
+                        processReceiptAnalysis(analysisResponse)
                     } else {
                         showError("レシート解析に失敗しました: ${analysisResponse?.error}")
                     }
@@ -235,10 +234,10 @@ class ExpenseTrackingActivity : AppCompatActivity() {
         }
     }
     
-    private fun processReceiptAnalysis(analysis: BackendCompatibleModels.ImageAnalysis) {
+    private fun processReceiptAnalysis(analysis: BackendCompatibleModels.ImageAnalysisResponse?) {
         try {
             // レシート解析結果を解析して自動入力
-            val description = analysis.description
+            val description = analysis?.analysis ?: ""
             val totalAmount = extractAmountFromDescription(description)
             val storeName = extractStoreNameFromDescription(description)
             val items = extractItemsFromDescription(description)
@@ -279,7 +278,7 @@ class ExpenseTrackingActivity : AppCompatActivity() {
     }
     
     private fun showReceiptConfirmationDialog(
-        analysis: BackendCompatibleModels.ImageAnalysis,
+        analysis: BackendCompatibleModels.ImageAnalysisResponse?,
         amount: Int,
         storeName: String,
         items: List<String>
@@ -407,14 +406,21 @@ class ExpenseTrackingActivity : AppCompatActivity() {
     private fun loadExpenseData() {
         lifecycleScope.launch {
             try {
-                // API呼び出しを一時的に無効化してビルドエラー回避
-                // val response = ApiClient(this@ExpenseTrackingActivity, securePreferences)
-                //     .apiService.getExpenseTracking(BackendCompatibleModels.ExpenseTrackingRequest())
-                    
-                // if (response.isSuccessful && response.body()?.success == true) {
-                //     val expenseData = response.body()?.data
-                //     // データの処理
-                // }
+                // Attempt to call backend if API exists; otherwise no-op and keep local list empty
+                try {
+                    val response = ApiClient(this@ExpenseTrackingActivity, securePreferences)
+                        .apiService.getExpenseTracking(month = null)
+
+                    if (response.isSuccessful && response.body()?.success == true) {
+                        val data = response.body()?.data
+                        // convert to local ExpenseItem list if possible
+                        data?.records?.let { recs ->
+                            // TODO: map BackendCompatibleModels.ExpenseRecord to local ExpenseItem if schema differs
+                        }
+                    }
+                } catch (e: Exception) {
+                    // ignore and continue with empty local list
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading expense data", e)
             }

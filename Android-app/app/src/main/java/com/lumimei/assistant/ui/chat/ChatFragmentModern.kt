@@ -4,34 +4,55 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.util.Log
+import android.widget.EditText
+import android.widget.Toast
+import android.content.Intent
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
+import android.view.MotionEvent
+import android.media.MediaPlayer
+import android.util.Base64
+import java.io.File
+import java.io.FileOutputStream
+import androidx.core.content.ContextCompat
+import androidx.cardview.widget.CardView
 import androidx.fragment.app.Fragment
-import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.lumimei.assistant.LumiMeiApplication
 import com.lumimei.assistant.R
-import com.lumimei.assistant.databinding.FragmentChatBinding
+import com.lumimei.assistant.databinding.FragmentChatModernBinding
 import com.lumimei.assistant.data.models.ChatMessage
-import com.lumimei.assistant.data.models.BackendCompatibleModels
 import com.lumimei.assistant.ui.chat.ChatAdapter
+import com.lumimei.assistant.network.ApiClient
+import com.lumimei.assistant.data.preferences.SecurePreferences
+import com.lumimei.assistant.data.models.BackendCompatibleModels
+import com.lumimei.assistant.utils.SmartLogger
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.*
 
 class ChatFragmentModern : Fragment() {
     
-    private var _binding: FragmentChatBinding? = null
+    private var _binding: FragmentChatModernBinding? = null
     private val binding get() = _binding!!
     
     private lateinit var chatAdapter: ChatAdapter
     private val messages = mutableListOf<ChatMessage>()
+    private var speechRecognizer: SpeechRecognizer? = null
+    private var isRecording = false
     private lateinit var app: LumiMeiApplication
+    private lateinit var apiClient: ApiClient
+    private lateinit var securePreferences: SecurePreferences
     
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
-        _binding = FragmentChatBinding.inflate(inflater, container, false)
+        _binding = FragmentChatModernBinding.inflate(inflater, container, false)
         return binding.root
     }
     
@@ -39,18 +60,41 @@ class ChatFragmentModern : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         
         app = requireActivity().application as LumiMeiApplication
-        
+        apiClient = ApiClient(requireContext(), app.securePreferences)
+        securePreferences = app.securePreferences
+
         setupRecyclerView()
         setupMessageInput()
-        setupVoiceAndTTSControls()
-        
+        setupTTSState()
+
         // Welcome message
         addWelcomeMessage()
+    }
+
+    private var isTTSEnabled = false
+
+    private fun setupTTSState() {
+        try {
+            isTTSEnabled = securePreferences.getBoolean("tts_enabled", true)
+            // Bind TTS toggle if present
+            try {
+                binding.btnTts.setOnClickListener {
+                    isTTSEnabled = !isTTSEnabled
+                    securePreferences.putBoolean("tts_enabled", isTTSEnabled)
+                    if (isTTSEnabled) Toast.makeText(requireContext(), "読み上げを有効にしました", Toast.LENGTH_SHORT).show()
+                    else Toast.makeText(requireContext(), "読み上げを無効にしました", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) { /* btnTts may not exist in some layouts */ }
+        } catch (e: Exception) {
+            // fallback default
+            isTTSEnabled = true
+        }
     }
     
     private fun setupRecyclerView() {
         try {
             chatAdapter = ChatAdapter(messages) { /* click listener */ }
+            // Use view binding from fragment_chat_modern.xml
             binding.recyclerViewChat.apply {
                 layoutManager = LinearLayoutManager(requireContext())
                 adapter = chatAdapter
@@ -62,231 +106,238 @@ class ChatFragmentModern : Fragment() {
     
     private fun setupMessageInput() {
         try {
+            // Modern layout uses btn_send and btn_voice_input IDs
             binding.btnSend.setOnClickListener {
-                sendMessage()
+                // Read content and dispatch
+                val edit = binding.editTextMessage
+                val text = edit?.text?.toString()?.trim() ?: ""
+                if (text.isNotEmpty()) {
+                    sendMessage(text)
+                    edit?.text?.clear()
+                }
             }
-            
-            binding.editTextMessage.setOnEditorActionListener { _, _, _ ->
-                sendMessage()
-                true
+
+            binding.btnVoiceInput.setOnClickListener {
+                // Start a simple voice flow using device SpeechRecognizer
+                if (!isRecording) startSpeechRecognition() else stopSpeechRecognition()
+            }
+
+            // If there's a TTS button, reflect saved state
+            try {
+                val ttsEnabled = securePreferences.getBoolean("tts_enabled", true)
+                // color toggle
+                if (ttsEnabled) binding.btnTts.setCardBackgroundColor(ContextCompat.getColor(requireContext(), R.color.colorPrimary))
+                else binding.btnTts.setCardBackgroundColor(ContextCompat.getColor(requireContext(), R.color.secondary_color))
+            } catch (e: Exception) { /* ignore */ }
+
+            // Central main voice button (push-to-talk) is in fragment_chat.xml as btn_voice_main
+            try {
+                    val mainBtn = binding.root.findViewById<com.google.android.material.card.MaterialCardView>(R.id.btn_voice_main)
+                    mainBtn?.setOnTouchListener { v, event ->
+                    when (event.action) {
+                        MotionEvent.ACTION_DOWN -> {
+                            if (!isRecording) startSpeechRecognition()
+                            true
+                        }
+                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                            if (isRecording) stopSpeechRecognition()
+                            true
+                        }
+                        else -> false
+                    }
+                }
+            } catch (e: Exception) {
+                // Some layouts may not include btn_voice_main; ignore if absent
             }
         } catch (e: Exception) {
             // Handle input error gracefully
         }
     }
-    
-    private fun setupVoiceAndTTSControls() {
+
+    private fun startSpeechRecognition() {
+        if (isRecording) return
         try {
-            // 音声入力ボタン（プッシュトゥトーク）
-            binding.btnVoiceMain.setOnTouchListener { v, event ->
-                when (event.action) {
-                    android.view.MotionEvent.ACTION_DOWN -> {
-                        startVoiceRecording()
-                        true
+            if (speechRecognizer == null) {
+                speechRecognizer = SpeechRecognizer.createSpeechRecognizer(requireContext())
+                speechRecognizer?.setRecognitionListener(object : RecognitionListener {
+                    override fun onReadyForSpeech(params: Bundle?) {}
+                    override fun onBeginningOfSpeech() {}
+                    override fun onRmsChanged(rmsdB: Float) {}
+                    override fun onBufferReceived(buffer: ByteArray?) {}
+                    override fun onEndOfSpeech() {}
+                    override fun onError(error: Int) {
+                        isRecording = false
+                        Toast.makeText(requireContext(), "音声認識エラー: $error", Toast.LENGTH_SHORT).show()
                     }
-                    android.view.MotionEvent.ACTION_UP -> {
-                        stopVoiceRecording()
-                        true
+                    override fun onResults(results: Bundle?) {
+                        isRecording = false
+                        val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                        if (!matches.isNullOrEmpty()) {
+                            val text = matches[0]
+                            sendMessage(text)
+                        }
                     }
-                    else -> false
-                }
+                    override fun onPartialResults(partialResults: Bundle?) {}
+                    override fun onEvent(eventType: Int, params: Bundle?) {}
+                })
             }
-            
-            // TTS設定ボタン
-            binding.btnTts.setOnClickListener {
-                toggleTTSEnabled()
+
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ja-JP")
+                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
             }
-            
-            // 音声設定ボタン
-            binding.btnVoiceSettings.setOnClickListener {
-                openVoiceSettings()
-            }
-            
+
+            isRecording = true
+            speechRecognizer?.startListening(intent)
+            // update UI if present
+            try {
+                    binding.root.findViewById<com.google.android.material.card.MaterialCardView>(R.id.btn_voice_main)
+                        ?.setCardBackgroundColor(ContextCompat.getColor(requireContext(), R.color.colorAccent))
+                binding.voiceRecordingOverlay.visibility = View.VISIBLE
+            } catch (_: Exception) {}
         } catch (e: Exception) {
-            Log.e("ChatFragmentModern", "Error setting up voice controls", e)
+            isRecording = false
         }
     }
-    
-    private fun startVoiceRecording() {
+
+    private fun stopSpeechRecognition() {
         try {
-            // 録音権限チェック
-            if (requireContext().checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) 
-                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), 1001)
-                return
-            }
-            
-            binding.voiceRecordingOverlay.visibility = View.VISIBLE
-            binding.tvVoiceStatus.visibility = View.VISIBLE
-            binding.tvVoiceStatus.text = "録音中... 離すと送信"
-            
-            // TODO: 実際の音声録音実装
-            Log.d("ChatFragmentModern", "Voice recording started")
-            
+            isRecording = false
+            speechRecognizer?.stopListening()
         } catch (e: Exception) {
-            Log.e("ChatFragmentModern", "Error starting voice recording", e)
+            // ignore
         }
-    }
-    
-    private fun stopVoiceRecording() {
         try {
+            binding.root.findViewById<com.google.android.material.card.MaterialCardView>(R.id.btn_voice_main)
+                    ?.setCardBackgroundColor(ContextCompat.getColor(requireContext(), R.color.primary_color))
             binding.voiceRecordingOverlay.visibility = View.GONE
-            binding.tvVoiceStatus.visibility = View.GONE
-            
-            // TODO: 音声データをSTTサービスに送信
-            val mockTranscription = "音声入力のテストメッセージです"
-            
-            // 文字起こし結果をメッセージとして送信
-            val userMessage = ChatMessage(
-                id = generateMessageId(),
-                text = "🎤 $mockTranscription",
-                isFromUser = true,
-                timestamp = System.currentTimeMillis(),
-                messageType = "voice"
+        } catch (_: Exception) {}
+    }
+
+    private fun sendMessage(text: String) {
+        // Add user message
+        val userMessage = ChatMessage(
+            id = generateMessageId(),
+            text = text,
+            isFromUser = true,
+            timestamp = System.currentTimeMillis(),
+            messageType = "text"
+        )
+        messages.add(userMessage)
+        chatAdapter.notifyItemInserted(messages.size - 1)
+
+        // Send to server
+        lifecycleScope.launch {
+            try {
+                val userId = securePreferences.userId ?: securePreferences.userEmail ?: run {
+                    withContext(Dispatchers.Main) { showToast("ユーザーIDが見つかりません。ログインしてください") }
+                    return@launch
+                }
+
+                val request = BackendCompatibleModels.MessageRequest(
+                    userId = userId,
+                    messageType = "text",
+                    message = text,
+                    context = mapOf("sessionId" to (app.sessionManager.getCurrentSessionId() ?: "unknown")),
+                    options = mapOf("sessionId" to (app.sessionManager.getCurrentSessionId() ?: "session_${System.currentTimeMillis()}"))
+                )
+
+                val response = apiClient.apiService.sendMessage(request)
+
+                withContext(Dispatchers.Main) {
+                    if (response.isSuccessful) {
+                        val body = response.body()
+                        if (body?.success == true) {
+                            // Android expects response to be an AssistantResponse object
+                            val assistantResponse = body.response
+                            val assistantText = if (assistantResponse is com.lumimei.assistant.data.models.BackendCompatibleModels.AssistantResponse) {
+                                assistantResponse.content
+                            } else {
+                                // Fallback: attempt to stringify unknown response shapes
+                                assistantResponse?.toString() ?: ""
+                            }
+
+                            val aiMessage = ChatMessage(
+                                id = UUID.randomUUID().toString(),
+                                text = assistantText,
+                                isFromUser = false,
+                                timestamp = System.currentTimeMillis(),
+                                messageType = "text"
+                            )
+                            addMessage(aiMessage)
+
+                            // Auto TTS if enabled
+                            if (isTTSEnabled && assistantText.isNotBlank()) {
+                                lifecycleScope.launch {
+                                    try {
+                                        val ttsReq = com.lumimei.assistant.data.models.BackendCompatibleModels.TTSRequest(text = assistantText)
+                                        val ttsResp = app.apiClient.synthesizeSpeech(ttsReq)
+                                        if (ttsResp != null && ttsResp.success && !ttsResp.audioData.isNullOrEmpty()) {
+                                            playBase64Audio(ttsResp.audioData ?: "", ttsResp.format ?: "wav")
+                                        } else {
+                                            SmartLogger.e(requireContext(), "ChatFragmentModern", "TTS response empty or failed: ${'$'}{ttsResp?.error}")
+                                        }
+                                    } catch (e: Exception) {
+                                        SmartLogger.e(requireContext(), "ChatFragmentModern", "TTS failed", e)
+                                    }
+                                }
+                            }
+                        } else {
+                            showToast("送信失敗: ${body?.error}")
+                        }
+                    } else {
+                        showToast("サーバーエラー: ${response.code()} ${response.message()}")
+                    }
+                }
+            } catch (e: Exception) {
+                SmartLogger.e(requireContext(), "ChatFragmentModern", "Error sending message", e)
+                withContext(Dispatchers.Main) { showToast("送信中にエラー: ${e.message}") }
+            }
+        }
+    }
+
+    private fun showToast(msg: String) {
+        Toast.makeText(requireContext(), msg, Toast.LENGTH_LONG).show()
+    }
+    
+    // Helper to add message to UI (keeps modern fragment self-contained)
+    private fun simulateAIResponse(userMessage: String) {
+        try {
+            // Simple AI response simulation
+            val responses = listOf(
+                "こんにちは！どのようにお手伝いできますか？",
+                "興味深いご質問ですね。詳しく教えてください。",
+                "そのことについて考えてみますね。",
+                "もう少し詳細を教えていただけますか？"
             )
             
-            messages.add(userMessage)
+            val aiResponse = ChatMessage(
+                id = generateMessageId(),
+                text = responses.random(),
+                isFromUser = false,
+                timestamp = System.currentTimeMillis(),
+                messageType = "text"
+            )
+            
+            messages.add(aiResponse)
             chatAdapter.notifyItemInserted(messages.size - 1)
             binding.recyclerViewChat.scrollToPosition(messages.size - 1)
-            
-            // AIに送信
-            sendRealMessageToAPI(mockTranscription)
-            
-            Log.d("ChatFragmentModern", "Voice recording stopped")
-            
         } catch (e: Exception) {
-            Log.e("ChatFragmentModern", "Error stopping voice recording", e)
+            // Handle AI response error gracefully
         }
+    
     }
-    
-    private var ttsEnabled = true
-    
-    private fun toggleTTSEnabled() {
-        ttsEnabled = !ttsEnabled
-        binding.btnTts.alpha = if (ttsEnabled) 1.0f else 0.5f
-        
-        val message = if (ttsEnabled) "TTS有効" else "TTS無効"
-        android.widget.Toast.makeText(requireContext(), message, android.widget.Toast.LENGTH_SHORT).show()
-        
-        // 設定を保存
-        app.securePreferences.putUserBoolean("tts_enabled", ttsEnabled)
-    }
-    
-    private fun openVoiceSettings() {
+
+    private fun addMessage(message: ChatMessage) {
         try {
-            // 音声設定画面を開く
-            val intent = android.content.Intent(requireContext(), com.lumimei.assistant.ui.settings.SettingsActivity::class.java)
-            intent.putExtra("focus_section", "voice_settings")
-            startActivity(intent)
+            messages.add(message)
+            chatAdapter.notifyItemInserted(messages.size - 1)
+            binding.recyclerViewChat.scrollToPosition(messages.size - 1)
         } catch (e: Exception) {
-            // フォールバック: 設定Fragment画面を開く
-            try {
-                val activity = requireActivity() as? com.lumimei.assistant.ui.MainActivity
-                activity?.showSettingsFragment()
-            } catch (e2: Exception) {
-                android.widget.Toast.makeText(requireContext(), "設定画面を開けませんでした", android.widget.Toast.LENGTH_SHORT).show()
-                Log.e("ChatFragmentModern", "Failed to open settings", e2)
-            }
+            // ignore UI update errors
         }
-    }
-    
-    private fun sendMessage() {
-        try {
-            val messageText = binding.editTextMessage.text.toString().trim()
-            if (messageText.isNotEmpty()) {
-                // Add user message
-                val userMessage = ChatMessage(
-                    id = generateMessageId(),
-                    text = messageText,
-                    isFromUser = true,
-                    timestamp = System.currentTimeMillis(),
-                    messageType = "text"
-                )
-                
-                messages.add(userMessage)
-                chatAdapter.notifyItemInserted(messages.size - 1)
-                
-                // Clear input
-                binding.editTextMessage.text.clear()
-                
-                // Scroll to bottom
-                binding.recyclerViewChat.scrollToPosition(messages.size - 1)
-                
-                // Send to AI (REAL API CALL - NO MOCK!)
-                sendRealMessageToAPI(messageText)
-            }
-        } catch (e: Exception) {
-            // Handle send error gracefully
-        }
-    }
-    
-    private fun sendRealMessageToAPI(userMessage: String) {
-        try {
-            lifecycleScope.launch {
-                try {
-                    val userId = app.securePreferences.userId ?: "user_${System.currentTimeMillis()}"
-                    
-                    val request = BackendCompatibleModels.MessageRequest(
-                        userId = userId,
-                        messageType = "text",
-                        message = userMessage,
-                        context = mapOf(
-                            "sessionId" to "chat_${System.currentTimeMillis()}",
-                            "locale" to "ja-JP"
-                        ),
-                        options = mapOf(
-                            "stream" to false,
-                            "model" to "gemma-3-12b-it@q4_k_m"
-                        )
-                    )
-                    
-                    val response = app.apiClient.apiService.sendMessage(request)
-                    
-                    if (response.isSuccessful && response.body()?.success == true) {
-                        val aiResponse = ChatMessage(
-                            id = generateMessageId(),
-                            text = response.body()?.response?.content ?: "申し訳ありません。応答を生成できませんでした。",
-                            isFromUser = false,
-                            timestamp = System.currentTimeMillis(),
-                            messageType = "text"
-                        )
-                        
-                        messages.add(aiResponse)
-                        chatAdapter.notifyItemInserted(messages.size - 1)
-                        binding.recyclerViewChat.scrollToPosition(messages.size - 1)
-                        
-                        // Save chat history to local storage
-                        app.securePreferences.putString(
-                            "chat_${System.currentTimeMillis()}",
-                            "${userMessage}|${aiResponse.text}"
-                        )
-                        
-                    } else {
-                        showErrorMessage("API応答エラー: ${response.body()?.error ?: "不明なエラー"}")
-                    }
-                    
-                } catch (e: Exception) {
-                    showErrorMessage("通信エラー: ${e.message}")
-                    Log.e("ChatFragmentModern", "Error sending message to API", e)
-                }
-            }
-        } catch (e: Exception) {
-            showErrorMessage("メッセージ送信に失敗しました: ${e.message}")
-        }
-    }
-    
-    private fun showErrorMessage(errorText: String) {
-        val errorMessage = ChatMessage(
-            id = generateMessageId(),
-            text = "⚠️ $errorText",
-            isFromUser = false,
-            timestamp = System.currentTimeMillis(),
-            messageType = "error"
-        )
-        
-        messages.add(errorMessage)
-        chatAdapter.notifyItemInserted(messages.size - 1)
-        binding.recyclerViewChat.scrollToPosition(messages.size - 1)
     }
     
     private fun addWelcomeMessage() {
@@ -308,6 +359,30 @@ class ChatFragmentModern : Fragment() {
     
     private fun generateMessageId(): String {
         return "msg_${System.currentTimeMillis()}_${(0..999).random()}"
+    }
+
+    // Play base64-encoded audio (wav/pcm) using MediaPlayer by writing to a temp file
+    private fun playBase64Audio(base64: String, format: String = "wav") {
+        try {
+            val audioBytes = Base64.decode(base64, Base64.DEFAULT)
+            val suffix = if (format.contains("wav", true)) ".wav" else ".raw"
+            val tempFile = File.createTempFile("tts_play", suffix, requireContext().cacheDir)
+            FileOutputStream(tempFile).use { fos ->
+                fos.write(audioBytes)
+                fos.flush()
+            }
+
+            val mp = MediaPlayer()
+            mp.setDataSource(tempFile.absolutePath)
+            mp.prepare()
+            mp.setOnCompletionListener { player ->
+                try { player.release() } catch (_: Exception) {}
+                try { tempFile.delete() } catch (_: Exception) {}
+            }
+            mp.start()
+        } catch (e: Exception) {
+            SmartLogger.e(requireContext(), "ChatFragmentModern", "TTS playback error", e)
+        }
     }
     
     override fun onDestroyView() {

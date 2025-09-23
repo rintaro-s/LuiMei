@@ -4,6 +4,7 @@
  */
 
 const lifeAssistantController = require('./life-assistant-controller');
+const communicationController = require('./communication-controller');
 
 // Helper function to generate mock responses
 function generateMockResponse(text, roleSheet = {}, history = [], lifeData = null) {
@@ -117,17 +118,76 @@ const processChat = async (req, res) => {
       console.warn('Could not load life assistant data:', error.message);
     }
 
-    // Generate mock response with life data context
+    // Try forwarding to configured LLM (client.py compatible) using communicationController.callLLM
+    try {
+      const llmRaw = await communicationController.callLLM(text, { role_sheet, history, compressed_memory }, { userId: req.user?.userId || 'dev_user', role_sheet, over_hallucination: req.body.over_hallucination });
+
+      // If LLM returns object or JSON string, try to normalize
+      let normalized = llmRaw;
+      if (typeof llmRaw === 'string') {
+        // try parse JSON if looks like JSON
+        try {
+          normalized = JSON.parse(llmRaw);
+        } catch (_) {
+          // keep as string
+        }
+      }
+
+      // If the LLM returned a client.py-like response object, extract response content
+      let assistantContent = '';
+      let assistantRaw = llmRaw;
+      if (normalized && typeof normalized === 'object') {
+        assistantContent = normalized.response?.content || normalized.response || normalized.text || JSON.stringify(normalized);
+      } else if (typeof normalized === 'string') {
+        assistantContent = normalized;
+      }
+
+      const assistantResponse = {
+        content: assistantContent,
+        type: 'text',
+        emotion: { dominant: 'neutral', confidence: 0.5 },
+        suggestions: [],
+        llm_raw: assistantRaw
+      };
+
+      const responseData = {
+        response: assistantResponse,
+        emotion: assistantResponse.emotion,
+        role_sheet: { role: role_sheet.role || 'assistant', mood: role_sheet.mood || 'neutral', personality: role_sheet.personality || 'friendly' },
+        history: [
+          ...history,
+          { role: 'user', content: text, timestamp: new Date().toISOString() },
+          { role: 'assistant', content: assistantContent, timestamp: new Date().toISOString() }
+        ],
+        compressed_memory: compressed_memory || null,
+        metadata: { processingTime: 0, timestamp: new Date().toISOString() }
+      };
+
+      console.log('Chat forwarded to LLM and response returned');
+      return res.status(200).json(Object.assign({ success: true }, responseData));
+    } catch (llmErr) {
+      console.warn('LLM forwarding failed, falling back to mock:', llmErr.message || llmErr);
+      // Fall through to mock response generation below
+    }
+
+    // Generate mock response with life data context (fallback)
     const mockResponse = generateMockResponse(text, role_sheet, history, lifeData);
 
-    // Create response data compatible with client.py
-    const responseData = {
-      response: mockResponse.text,
+    // Create response data compatible with Android `AssistantResponse` shape
+    const assistantResponse = {
+      content: mockResponse.text,
+      type: 'text',
       emotion: {
         dominant: mockResponse.emotion,
-        confidence: mockResponse.confidence,
-        secondary: 'calm'
+        confidence: mockResponse.confidence
       },
+      suggestions: mockResponse.suggestions || [],
+      llm_raw: mockResponse.llm_raw || null
+    };
+
+    const responseData = {
+      response: assistantResponse,
+      emotion: assistantResponse.emotion,
       role_sheet: {
         role: role_sheet.role || 'assistant',
         mood: role_sheet.mood || mockResponse.emotion,
@@ -141,7 +201,7 @@ const processChat = async (req, res) => {
           timestamp: new Date().toISOString()
         },
         {
-          role: 'assistant', 
+          role: 'assistant',
           content: mockResponse.text,
           timestamp: new Date().toISOString(),
           emotion: mockResponse.emotion
@@ -170,12 +230,9 @@ const processChat = async (req, res) => {
       } : undefined
     };
 
-    console.log('Chat processed successfully');
+    console.log('Chat processed successfully (mock fallback)');
 
-    res.status(200).json({
-      success: true,
-      ...responseData
-    });
+    res.status(200).json(Object.assign({ success: true }, responseData));
 
   } catch (error) {
     console.error('Chat processing error:', error);
@@ -269,13 +326,58 @@ const clearChatHistory = async (req, res) => {
 // Send message - MOCK IMPLEMENTATION
 const sendMessage = async (req, res) => {
   try {
-    const { message, context } = req.body;
-    
-    const response = generateMockResponse(message, {}, []);
+    const { message, context = {}, messageType, userId, options = {}, includeDebug } = req.body;
+
+    // Normalize userId from different fields
+    const resolvedUserId = userId || req.body.userId || req.body.user_id || req.user?.userId || 'dev_user';
+
+    // Attempt to forward to LLM (client.py compatible)
+    try {
+      console.log('Forwarding legacy sendMessage to LLM for user:', resolvedUserId);
+      const llmRaw = await communicationController.callLLM(message, { ...context, userId: resolvedUserId }, { userId: resolvedUserId, role_sheet: options.role_sheet || {}, over_hallucination: options.over_hallucination || false, includeDebug });
+
+      // normalize llmRaw
+      let normalized = llmRaw;
+      if (typeof llmRaw === 'string') {
+        try { normalized = JSON.parse(llmRaw); } catch (_) { /* keep string */ }
+      }
+
+      let assistantContent = '';
+      if (normalized && typeof normalized === 'object') {
+        assistantContent = normalized.response?.content || normalized.response || normalized.text || JSON.stringify(normalized);
+      } else if (typeof normalized === 'string') {
+        assistantContent = normalized;
+      }
+
+      const assistant = {
+        content: assistantContent,
+        type: 'text',
+        emotion: { dominant: 'neutral', confidence: 0.5 },
+        llm_raw: llmRaw
+      };
+
+      return res.status(200).json({ success: true, response: assistant, metadata: { timestamp: new Date().toISOString() } });
+    } catch (err) {
+      console.warn('Forward to LLM failed for legacy sendMessage, falling back to mock:', err.message || err);
+      // fall through to mock reply below
+    }
+
+    // Fallback mock response if forwarding failed
+    const mock = generateMockResponse(message, {}, []);
+    const assistant = {
+      content: mock.text,
+      type: 'text',
+      emotion: {
+        dominant: mock.emotion,
+        confidence: mock.confidence
+      },
+      suggestions: mock.suggestions || [],
+      llm_raw: mock.llm_raw || null
+    };
 
     res.status(200).json({
       success: true,
-      response: response.text,
+      response: assistant,
       metadata: {
         processingTime: Math.random() * 100 + 50,
         timestamp: new Date().toISOString()

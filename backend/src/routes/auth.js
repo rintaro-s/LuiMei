@@ -125,7 +125,8 @@ router.get('/google/callback',
       // Otherwise perform a normal redirect (used by non-browser clients)
       res.redirect(deepLink);
     } catch (error) {
-      console.error('OAuth callback error:', error);
+      console.error('OAuth callback error:', error && error.stack ? error.stack : error);
+      try { const { writeErrorLog } = require('../utils/error-logger'); writeErrorLog({ level: 'oauth_callback', error: error && error.stack ? error.stack : String(error), path: req.originalUrl, method: req.method }); } catch(e) { /* ignore */ }
       res.redirect('/auth/failure');
     }
   }

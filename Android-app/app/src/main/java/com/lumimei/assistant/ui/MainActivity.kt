@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.util.Log
+import com.lumimei.assistant.utils.SmartLogger
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -158,12 +159,12 @@ class MainActivity : AppCompatActivity() {
                 try {
                     val response = app.apiClient.apiService.healthCheck()
                     if (response.isSuccessful) {
-                        Log.d(TAG, "API connection successful")
+                        SmartLogger.i(this@MainActivity, TAG, "API connection successful")
                     } else {
-                        Log.w(TAG, "API connection failed: ${response.code()}")
+                            SmartLogger.w(this@MainActivity, TAG, "API connection failed: ${response.code()}")
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "API connection error", e)
+                        SmartLogger.e(this@MainActivity, TAG, "API connection error", e)
                 }
             }
         }
@@ -171,7 +172,7 @@ class MainActivity : AppCompatActivity() {
     
     private fun updateUIForLoginState() {
         // ナビゲーションメニューの更新などが必要な場合はここで実装
-        Log.d(TAG, "UI updated for login state")
+    SmartLogger.d(this, TAG, "UI updated for login state")
     }
     
     private fun showLoginDialog() {
@@ -236,13 +237,13 @@ class MainActivity : AppCompatActivity() {
                         app.securePreferences.userId = userId
                         app.securePreferences.userEmail = email
                         app.securePreferences.userName = name
-                        Log.d(TAG, "User profile fetched and saved")
+                    SmartLogger.d(this@MainActivity, TAG, "User profile fetched and saved")
                     }
                 } else {
-                    Log.w(TAG, "Failed to fetch user profile: ${response.code()}")
+                    SmartLogger.w(this@MainActivity, TAG, "Failed to fetch user profile: ${response.code()}")
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error fetching user profile", e)
+                SmartLogger.e(this@MainActivity, TAG, "Error fetching user profile", e)
             }
         }
     }
@@ -277,9 +278,9 @@ class MainActivity : AppCompatActivity() {
                 .withListener(object : MultiplePermissionsListener {
                     override fun onPermissionsChecked(report: MultiplePermissionsReport) {
                         if (report.areAllPermissionsGranted()) {
-                            Log.d(TAG, "All permissions granted")
-                        } else {
-                            Log.w(TAG, "Some permissions denied")
+                                        SmartLogger.d(this@MainActivity, TAG, "All permissions granted")
+                                            } else {
+                                                            SmartLogger.w(this@MainActivity, TAG, "Some permissions denied")
                             showPermissionExplanation(report.deniedPermissionResponses.map { it.permissionName })
                         }
                         
@@ -364,7 +365,7 @@ class MainActivity : AppCompatActivity() {
     
     private fun handleAssistantIntent() {
         val action = intent.action
-        Log.d(TAG, "Intent action: $action")
+    SmartLogger.d(this, TAG, "Intent action: $action")
         
         when (action) {
             "android.intent.action.ASSIST",
@@ -375,7 +376,7 @@ class MainActivity : AppCompatActivity() {
                     // 現在利用できません
                     Toast.makeText(this, "デバイスアシスタント機能は開発中です", Toast.LENGTH_SHORT).show()
                 } catch (e: Exception) {
-                    Log.e(TAG, "Failed to show device assistant message", e)
+                    SmartLogger.e(this, TAG, "Failed to show device assistant message", e)
                 }
                 
                 // フォールバック: アシスタントとして呼び出された場合、オーバーレイを表示
@@ -396,7 +397,7 @@ class MainActivity : AppCompatActivity() {
             action = com.lumimei.assistant.ui.overlay.OverlayChatService.ACTION_SHOW
             putExtra("auto_start_voice", true) // 音声認識自動開始フラグ
         }
-        startService(intent)
+                    startService(intent)
     }
     
     private fun requestOverlayPermission() {

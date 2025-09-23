@@ -9,7 +9,7 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 class StudySessionAdapter(
-    private val sessions: List<StudySession>,
+    private val sessions: MutableList<StudySession>,
     private val onSessionClick: (StudySession) -> Unit
 ) : RecyclerView.Adapter<StudySessionAdapter.ViewHolder>() {
     
@@ -58,5 +58,11 @@ class StudySessionAdapter(
                 onSessionClick(session)
             }
         }
+    }
+
+    fun updateSessions(newSessions: List<StudySession>) {
+        sessions.clear()
+        sessions.addAll(newSessions)
+        notifyDataSetChanged()
     }
 }

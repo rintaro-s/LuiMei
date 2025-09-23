@@ -20,9 +20,34 @@ passport.use(new GoogleStrategy({
   })()
 }, async (accessToken, refreshToken, profile, done) => {
   try {
-    // Check if user exists
+    // If mongoose isn't connected yet, don't fail the OAuth flow.
+    // Instead create a transient user-like object so the callback can continue
+    // and generate tokens; persistence will be attempted later when DB is available.
+    const mongoose = require('mongoose');
+    const dbConnected = mongoose.connection && mongoose.connection.readyState !== 0;
+    if (!dbConnected) {
+      console.warn('⚠️  Google OAuth attempted while DB not connected - proceeding with transient user object');
+      const transientUser = {
+        googleId: profile.id,
+        userId: 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+        email: (profile.emails && profile.emails[0] && profile.emails[0].value) || null,
+        displayName: profile.displayName || null,
+        firstName: (profile.name && profile.name.givenName) || null,
+        lastName: (profile.name && profile.name.familyName) || null,
+        profilePicture: (profile.photos && profile.photos[0] && profile.photos[0].value) || null,
+        accessToken: accessToken,
+        refreshToken: refreshToken,
+        provider: 'google',
+        isTransient: true,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+      return done(null, transientUser);
+    }
+
+    // Check if user exists (DB is connected)
     let user = await User.findOne({ googleId: profile.id });
-    
+
     if (user) {
       // Update user data with latest info from Google
       user.accessToken = accessToken;
@@ -32,15 +57,15 @@ passport.use(new GoogleStrategy({
       return done(null, user);
     }
 
-    // Create new user
+    // Create new persistent user
     const newUser = new User({
       googleId: profile.id,
       userId: 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
-      email: profile.emails[0].value,
-      displayName: profile.displayName,
-      firstName: profile.name.givenName,
-      lastName: profile.name.familyName,
-      profilePicture: profile.photos[0].value,
+      email: (profile.emails && profile.emails[0] && profile.emails[0].value) || null,
+      displayName: profile.displayName || null,
+      firstName: (profile.name && profile.name.givenName) || null,
+      lastName: (profile.name && profile.name.familyName) || null,
+      profilePicture: (profile.photos && profile.photos[0] && profile.photos[0].value) || null,
       accessToken: accessToken,
       refreshToken: refreshToken,
       provider: 'google',
@@ -71,7 +96,7 @@ passport.use(new GoogleStrategy({
     await newUser.save();
     return done(null, newUser);
   } catch (error) {
-    console.error('Google OAuth Error:', error);
+    console.error('Google OAuth Error:', error && error.message ? error.message : error);
     return done(error, null);
   }
 }));

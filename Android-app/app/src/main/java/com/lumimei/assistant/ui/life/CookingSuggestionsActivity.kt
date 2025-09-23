@@ -55,115 +55,35 @@ class CookingSuggestionsActivity : AppCompatActivity() {
                 binding.progressBar.visibility = View.VISIBLE
                 binding.layoutError.visibility = View.GONE
                 
-                val userId = securePreferences.userId ?: "user_${System.currentTimeMillis()}"
-                
-                // 本番API呼び出し - モック削除
-                val request = BackendCompatibleModels.MessageRequest(
-                    userId = userId,
-                    messageType = "cooking_request",
-                    message = "今日のおすすめ料理を教えてください",
-                    context = mapOf(
-                        "mealTime" to getCurrentMealTime(),
-                        "preferences" to getUserFoodPreferences(),
-                        "requestType" to "cooking_suggestions"
-                    ),
-                    options = mapOf(
-                        "format" to "structured",
-                        "count" to 5
-                    )
-                )
-                
                 val response = ApiClient(this@CookingSuggestionsActivity, securePreferences)
-                    .apiService.sendMessage(request)
+                    .apiService.getCookingSuggestions(
+                        ingredients = null,
+                        difficulty = null,
+                        mealType = "breakfast"
+                    )
                     
                 if (response.isSuccessful && response.body()?.success == true) {
-                    val aiResponse = response.body()?.response?.content ?: ""
-                    
-                    // AI応答から料理提案を解析
-                    val suggestions = parseAIResponseToSuggestions(aiResponse)
-                    
-                    recipes.clear()
-                    recipes.addAll(suggestions)
-                    adapter.notifyDataSetChanged()
-                    
-                    if (recipes.isEmpty()) {
-                        showEmptyState()
-                    } else {
-                        binding.tvSuggestionsCount.text = "${recipes.size}件のレシピ提案"
-                        binding.recyclerRecipes.visibility = View.VISIBLE
-                        binding.layoutEmptyState.visibility = View.GONE
+                    val suggestionsData = response.body()?.data
+                    suggestionsData?.suggestions?.let { suggestions ->
+                        recipes.clear()
+                        recipes.addAll(suggestions)
+                        adapter.notifyDataSetChanged()
+                        
+                        if (recipes.isEmpty()) {
+                            showEmptyState()
+                        } else {
+                            binding.tvSuggestionsCount.text = "${recipes.size}件のレシピ提案"
+                        }
                     }
                 } else {
-                    showError("料理提案の取得に失敗しました: ${response.body()?.error ?: "サーバーエラー"}")
+                    showError("料理提案の取得に失敗しました")
                 }
             } catch (e: Exception) {
                 showError("エラー: ${e.message}")
-                android.util.Log.e("CookingSuggestions", "Error loading suggestions", e)
             } finally {
                 binding.progressBar.visibility = View.GONE
             }
         }
-    }
-    
-    private fun getCurrentMealTime(): String {
-        val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
-        return when (hour) {
-            in 5..10 -> "breakfast"
-            in 11..14 -> "lunch"
-            in 17..21 -> "dinner"
-            else -> "snack"
-        }
-    }
-    
-    private fun getUserFoodPreferences(): List<String> {
-        // ユーザーの食べ物の好みを取得
-        return listOf("和食", "簡単調理", "ヘルシー")
-    }
-    
-    private fun parseAIResponseToSuggestions(aiResponse: String): List<BackendCompatibleModels.CookingSuggestion> {
-        // AI応答から料理提案を解析する実装
-        val suggestions = mutableListOf<BackendCompatibleModels.CookingSuggestion>()
-        
-        try {
-            // 簡単な解析実装（本来はもっと複雑な解析が必要）
-            val lines = aiResponse.split("\n").filter { it.isNotBlank() }
-            
-            lines.forEach { line ->
-                if (line.contains("料理") || line.contains("レシピ")) {
-                    suggestions.add(
-                        BackendCompatibleModels.CookingSuggestion(
-                            id = "recipe_${System.currentTimeMillis()}_${suggestions.size}",
-                            name = line.trim(),
-                            difficulty = "簡単",
-                            cookingTime = "30分",
-                            ingredients = listOf("材料1", "材料2", "材料3"),
-                            instructions = listOf("調理手順1", "調理手順2", "調理手順3"),
-                            tags = listOf(getCurrentMealTime(), "ヘルシー")
-                        )
-                    )
-                }
-            }
-            
-            // 最低1つは提案を作成
-            if (suggestions.isEmpty()) {
-                suggestions.add(
-                    BackendCompatibleModels.CookingSuggestion(
-                        id = "default_recipe",
-                        name = "今日のおすすめ料理",
-                        difficulty = "簡単",
-                        cookingTime = "30分",
-                        ingredients = listOf("お好みの食材"),
-                        instructions = listOf("お好みの方法で調理してください"),
-                        tags = listOf(getCurrentMealTime())
-                    )
-                )
-            }
-            
-        } catch (e: Exception) {
-            android.util.Log.e("CookingSuggestions", "Error parsing AI response", e)
-        }
-        
-        return suggestions
     }
     
         private fun showCookingSuggestion(suggestion: String) {

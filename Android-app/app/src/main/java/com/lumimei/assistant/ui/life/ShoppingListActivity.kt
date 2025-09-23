@@ -61,8 +61,22 @@ class ShoppingListActivity : AppCompatActivity() {
                 if (response.isSuccessful && response.body()?.success == true) {
                     val responseData = response.body()?.data
                     try {
-                        // items参照エラーを回避 - 直接空リストを使用
-                        val itemsList = emptyList<com.lumimei.assistant.data.models.BackendCompatibleModels.ShoppingItem>()
+                        val itemsList = mutableListOf<com.lumimei.assistant.data.models.BackendCompatibleModels.ShoppingItem>()
+                        if (responseData != null) {
+                            // best-effort extraction
+                            try {
+                                val itemsField = responseData::class.java.getDeclaredField("items")
+                                itemsField.isAccessible = true
+                                val raw = itemsField.get(responseData) as? List<*>
+                                raw?.forEach { itItem ->
+                                    if (itItem is com.lumimei.assistant.data.models.BackendCompatibleModels.ShoppingItem) {
+                                        itemsList.add(itItem)
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                // fallback: empty
+                            }
+                        }
                         shoppingItems.clear()
                         shoppingItems.addAll(itemsList)
                         adapter.notifyDataSetChanged()
