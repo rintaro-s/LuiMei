@@ -90,5 +90,5 @@
     <!-- API Configuration -->
     <!-- NOTE: prefer BuildConfig.SERVER_BASE_URL in code; this string is kept for legacy resources
         and can be used by layouts that don't access BuildConfig directly. -->
-    <string name="api_base_url">https://1af343e6a50a.ngrok-free.app</string>
+    <string name="api_base_url">https://23099049f8db.ngrok-free.app</string>
 </resources>

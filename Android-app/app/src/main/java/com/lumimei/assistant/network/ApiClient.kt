@@ -185,25 +185,41 @@ class ApiClient(
             val secureBase = securePreferences.getBaseUrl()
             Log.d(TAG, "synthesizeSpeech -> BuildConfig.SERVER_BASE_URL=$buildBase securePrefBase=$secureBase")
 
-            // Use securePreferences value for the actual request to preserve runtime overrides
-            val effectiveUrl = "${secureBase}/api/tts"
+            // Normalize base URL and use securePreferences value for the actual request to preserve runtime overrides
+            var baseNormalized = secureBase.trim()
+            if (baseNormalized.endsWith("/")) baseNormalized = baseNormalized.dropLast(1)
+            val effectiveUrl = "$baseNormalized/api/tts"
             Log.d(TAG, "synthesizeSpeech -> url=$effectiveUrl payload=$jsonBody")
 
-            val httpRequest = Request.Builder()
+            // Build request with explicit headers (helpful if interceptors misbehave)
+            val httpRequestBuilder = Request.Builder()
                 .url(effectiveUrl)
                 .post(requestBody)
-                .build()
-                
-            okHttpClient.newCall(httpRequest).execute().use { response ->
-                if (response.isSuccessful) {
+                .addHeader("Content-Type", "application/json")
+                .addHeader("Accept", "application/json")
+
+            try {
+                okHttpClient.newCall(httpRequestBuilder.build()).execute().use { response ->
                     val responseBody = response.body?.string()
-                    gson.fromJson(responseBody, com.lumimei.assistant.data.models.BackendCompatibleModels.TTSResponse::class.java)
-                } else {
-                    com.lumimei.assistant.data.models.BackendCompatibleModels.TTSResponse(
-                        success = false,
-                        error = "HTTP ${response.code}"
-                    )
+                    Log.d(TAG, "synthesizeSpeech <- response code=${response.code} body=${responseBody}")
+                    if (response.isSuccessful && responseBody != null) {
+                        gson.fromJson(responseBody, com.lumimei.assistant.data.models.BackendCompatibleModels.TTSResponse::class.java)
+                    } else {
+                        Log.w(TAG, "synthesizeSpeech non-success response: code=${response.code}")
+                        com.lumimei.assistant.data.models.BackendCompatibleModels.TTSResponse(
+                            success = false,
+                            error = "HTTP ${response.code}",
+                            audioData = null,
+                            format = null
+                        )
+                    }
                 }
+            } catch (e: Exception) {
+                Log.e(TAG, "synthesizeSpeech exception while sending request", e)
+                com.lumimei.assistant.data.models.BackendCompatibleModels.TTSResponse(
+                    success = false,
+                    error = e.toString()
+                )
             }
         } catch (e: Exception) {
             com.lumimei.assistant.data.models.BackendCompatibleModels.TTSResponse(

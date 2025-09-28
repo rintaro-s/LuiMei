@@ -26,14 +26,14 @@ android {
     buildTypes {
         debug {
             debuggable true
-            buildConfigField "String", "SERVER_BASE_URL", '"https://1af343e6a50a.ngrok-free.app"'
-            buildConfigField "String", "SOCKET_URL", '"https://1af343e6a50a.ngrok-free.app"'
+            buildConfigField "String", "SERVER_BASE_URL", '"https://23099049f8db.ngrok-free.app"'
+            buildConfigField "String", "SOCKET_URL", '"https://23099049f8db.ngrok-free.app"'
         }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            buildConfigField "String", "SERVER_BASE_URL", '"https://1af343e6a50a.ngrok-free.app"'
-            buildConfigField "String", "SOCKET_URL", '"https://1af343e6a50a.ngrok-free.app"'
+            buildConfigField "String", "SERVER_BASE_URL", '"https://23099049f8db.ngrok-free.app"'
+            buildConfigField "String", "SOCKET_URL", '"https://23099049f8db.ngrok-free.app"'
         }
     }
     

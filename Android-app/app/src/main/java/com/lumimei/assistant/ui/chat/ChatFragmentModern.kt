@@ -7,6 +7,8 @@ import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.Toast
 import android.content.Intent
+import android.net.Uri
+import android.os.Handler
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -46,6 +48,8 @@ class ChatFragmentModern : Fragment() {
     private lateinit var app: LumiMeiApplication
     private lateinit var apiClient: ApiClient
     private lateinit var securePreferences: SecurePreferences
+    private lateinit var localHandler: Handler
+    private val scheduledRunnables = mutableListOf<Runnable>()
     
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -62,6 +66,7 @@ class ChatFragmentModern : Fragment() {
         app = requireActivity().application as LumiMeiApplication
         apiClient = ApiClient(requireContext(), app.securePreferences)
         securePreferences = app.securePreferences
+    localHandler = Handler(requireContext().mainLooper)
 
         setupRecyclerView()
         setupMessageInput()
@@ -217,6 +222,9 @@ class ChatFragmentModern : Fragment() {
     }
 
     private fun sendMessage(text: String) {
+        // First try local command routing (returns true if handled locally)
+        if (processLocalCommand(text)) return
+
         // Add user message
         val userMessage = ChatMessage(
             id = generateMessageId(),
@@ -294,6 +302,110 @@ class ChatFragmentModern : Fragment() {
             } catch (e: Exception) {
                 SmartLogger.e(requireContext(), "ChatFragmentModern", "Error sending message", e)
                 withContext(Dispatchers.Main) { showToast("送信中にエラー: ${e.message}") }
+            }
+        }
+    }
+
+    // Simple local intent router. Return true if handled locally.
+    private fun processLocalCommand(text: String): Boolean {
+        val trimmed = text.trim()
+        // Timer: "タイマー 5分" or "タイマー5分"
+        val timerRegex = Regex("タイマー\\s*(\\d+)\\s*分")
+        val timerMatch = timerRegex.find(trimmed)
+        if (timerMatch != null) {
+            val minutes = timerMatch.groupValues[1].toIntOrNull() ?: 0
+            if (minutes > 0) {
+                startLocalTimer(minutes)
+                showAssistantResponse("${minutes}分のタイマーをセットしました。")
+                return true
+            }
+        }
+
+        // Weather: "天気" 明示的なワード
+        if (trimmed.contains("天気") || trimmed.contains("天候")) {
+            openWeatherForLocation()
+            showAssistantResponse("現在の天気をブラウザで表示します。")
+            return true
+        }
+
+        // Music control: "音楽 再生" / "音楽 停止"
+        if (trimmed.contains("音楽") && (trimmed.contains("再生") || trimmed.contains("停止") || trimmed.contains("止め"))) {
+            // Simple UX feedback only; integrating with media session is platform-specific
+            if (trimmed.contains("再生")) showAssistantResponse("音楽を再生します（疑似操作）。")
+            else showAssistantResponse("音楽を停止します（疑似操作）。")
+            return true
+        }
+
+        // Note: "メモ <text>"
+        val noteRegex = Regex("メモ\\s+(.+)")
+        val noteMatch = noteRegex.find(trimmed)
+        if (noteMatch != null) {
+            val note = noteMatch.groupValues[1]
+            saveLocalNote(note)
+            showAssistantResponse("メモを保存しました: ${note}")
+            return true
+        }
+
+        return false
+    }
+
+    private fun startLocalTimer(minutes: Int) {
+        val millis = minutes * 60 * 1000L
+        val runnable = Runnable {
+            // Notify user and TTS
+            showAssistantResponse("${minutes}分のタイマーが終了しました。")
+            // Remove from scheduled list
+            scheduledRunnables.removeIf { it == Runnable { } }
+        }
+        scheduledRunnables.add(runnable)
+        localHandler.postDelayed(runnable, millis)
+    }
+
+    private fun openWeatherForLocation() {
+        try {
+            val weatherUrl = "https://www.google.com/search?q=天気"
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(weatherUrl))
+            startActivity(intent)
+        } catch (e: Exception) {
+            SmartLogger.e(requireContext(), "ChatFragmentModern", "Failed to open weather", e)
+        }
+    }
+
+    private fun saveLocalNote(note: String) {
+        try {
+            securePreferences.putUserString("last_note", note)
+        } catch (e: Exception) {
+            SmartLogger.e(requireContext(), "ChatFragmentModern", "Failed to save note", e)
+        }
+    }
+
+    // Show assistant-style response locally and optionally TTS
+    private fun showAssistantResponse(text: String) {
+        lifecycleScope.launch {
+            withContext(Dispatchers.Main) {
+                val aiMessage = ChatMessage(
+                    id = UUID.randomUUID().toString(),
+                    text = text,
+                    isFromUser = false,
+                    timestamp = System.currentTimeMillis(),
+                    messageType = "text"
+                )
+                addMessage(aiMessage)
+            }
+
+            // TTS
+            if (isTTSEnabled && text.isNotBlank()) {
+                try {
+                    val ttsReq = com.lumimei.assistant.data.models.BackendCompatibleModels.TTSRequest(text = text)
+                    val ttsResp = app.apiClient.synthesizeSpeech(ttsReq)
+                    if (ttsResp != null && ttsResp.success && !ttsResp.audioData.isNullOrEmpty()) {
+                        withContext(Dispatchers.Main) {
+                            playBase64Audio(ttsResp.audioData ?: "", ttsResp.format ?: "wav")
+                        }
+                    }
+                } catch (e: Exception) {
+                    SmartLogger.e(requireContext(), "ChatFragmentModern", "Local TTS failed", e)
+                }
             }
         }
     }

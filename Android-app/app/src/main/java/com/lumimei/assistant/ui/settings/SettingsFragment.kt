@@ -413,10 +413,17 @@ class SettingsFragment : Fragment() {
             .setTitle("ログイン")
             .setMessage("ゲストモードで利用中です。アカウントでログインしますか？")
             .setPositiveButton("ログイン") { _, _ ->
-                // Navigate to login activity
+                // Try to reuse the main activity's login flow (this opens the OAuth URL)
                 try {
-                    val intent = Intent(requireContext(), Class.forName("com.lumimei.assistant.ui.auth.LoginActivity"))
-                    startActivity(intent)
+                    val mainAct = requireActivity() as? com.lumimei.assistant.ui.MainActivity
+                    if (mainAct != null) {
+                        mainAct.startLoginFlow()
+                    } else {
+                        // Fallback: open the OAuth URL in browser
+                        val authUrl = "${com.lumimei.assistant.BuildConfig.SERVER_BASE_URL}/auth/google"
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(authUrl))
+                        startActivity(intent)
+                    }
                 } catch (e: Exception) {
                     Toast.makeText(requireContext(), "ログイン機能は準備中です", Toast.LENGTH_SHORT).show()
                 }
